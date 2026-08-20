@@ -12,7 +12,8 @@ namespace Pockettransfer.Server.Services;
 public sealed class AccountService(
     BankDbContext db,
     IPasswordHasher<User> hasher,
-    IOptions<BankOptions> options)
+    IOptions<BankOptions> options,
+    LoginThrottle throttle)
 {
     private static readonly Regex UsernamePattern = new(@"^[a-z0-9_]{3,32}$", RegexOptions.Compiled);
 
@@ -42,15 +43,36 @@ public sealed class AccountService(
         return user;
     }
 
-    public async Task<User?> AuthenticateAsync(string login, string password, CancellationToken ct)
+    public async Task<AuthResult> AuthenticateAsync(string login, string password, string clientIp, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(clientIp))
+            clientIp = "unknown";
+
+        if (!throttle.Allow(clientIp, login))
+            return AuthResult.Limited();
+
         var user = await FindByLoginAsync(login, ct);
         if (user is null)
-            return null;
+        {
+            throttle.RecordFailure(clientIp, login);
+            return AuthResult.Invalid();
+        }
+
         var result = hasher.VerifyHashedPassword(user, user.PasswordHash, password);
-        return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded
-            ? user
-            : null;
+        if (result == PasswordVerificationResult.Failed)
+        {
+            throttle.RecordFailure(clientIp, login);
+            return AuthResult.Invalid();
+        }
+
+        if (result == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            user.PasswordHash = hasher.HashPassword(user, password);
+            await db.SaveChangesAsync(ct);
+        }
+
+        throttle.RecordSuccess(clientIp, login);
+        return AuthResult.Ok(user);
     }
 
     public async Task<User?> FindByLoginAsync(string login, CancellationToken ct)
@@ -201,4 +223,12 @@ public sealed class AccountService(
     }
 
     public static bool IsValidUsername(string username) => UsernamePattern.IsMatch(NormalizeUsername(username));
+}
+
+public readonly record struct AuthResult(User? User, bool RateLimited)
+{
+    public bool Succeeded => User is not null;
+    public static AuthResult Ok(User user) => new(user, false);
+    public static AuthResult Invalid() => new(null, false);
+    public static AuthResult Limited() => new(null, true);
 }

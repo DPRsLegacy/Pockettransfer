@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pockettransfer.Server.Data;
@@ -41,18 +42,22 @@ public sealed class ApiController(
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     [HttpPost("auth/login")]
     public async Task<ActionResult> Login([FromBody] AuthRequest body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
             return BadRequest(new { error = "Username and password are required." });
-        var user = await accounts.AuthenticateAsync(body.Username, body.Password, ct);
-        if (user is null)
+        var result = await accounts.AuthenticateAsync(
+            body.Username, body.Password, LoginThrottle.ClientKey(HttpContext), ct);
+        if (result.RateLimited)
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = LoginThrottle.TooManyAttempts });
+        if (result.User is null)
             return Unauthorized(new { error = "Invalid username or password." });
-        await accounts.EnsureBoxesAsync(user.Id, ct);
+        await accounts.EnsureBoxesAsync(result.User.Id, ct);
         var token = await accounts.IssueDeviceTokenAsync(
-            user, body.Name ?? "api-login", body.Platform ?? "api", ct);
-        return Ok(new { token, username = user.Username, userId = user.Id });
+            result.User, body.Name ?? "api-login", body.Platform ?? "api", ct);
+        return Ok(new { token, username = result.User.Username, userId = result.User.Id });
     }
 
     [Authorize(Policy = "AnyUser")]

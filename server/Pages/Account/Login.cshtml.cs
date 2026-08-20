@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 using Pockettransfer.Server.Data;
 using Pockettransfer.Server.Services;
 
@@ -20,22 +21,32 @@ public class LoginModel(AccountService accounts) : PageModel
 
     public string? ReturnUrl { get; set; }
 
-    public void OnGet(string? returnUrl = null)
+    public void OnGet(string? returnUrl = null, bool limited = false)
     {
         ReturnUrl = returnUrl;
+        if (limited)
+            Error = LoginThrottle.TooManyAttempts;
     }
 
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> OnPostAsync(CancellationToken ct)
     {
-        var user = await accounts.AuthenticateAsync(Username, Password, ct);
-        if (user is null)
+        var result = await accounts.AuthenticateAsync(Username, Password, LoginThrottle.ClientKey(HttpContext), ct);
+        if (result.RateLimited)
+        {
+            Error = LoginThrottle.TooManyAttempts;
+            Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            return Page();
+        }
+
+        if (result.User is null)
         {
             Error = "Invalid username or password.";
             return Page();
         }
 
-        await accounts.EnsureBoxesAsync(user.Id, ct);
-        await SignInUserAsync(user);
+        await accounts.EnsureBoxesAsync(result.User.Id, ct);
+        await SignInUserAsync(result.User);
         return Redirect(string.IsNullOrEmpty(ReturnUrl) ? "/Bank" : ReturnUrl);
     }
 

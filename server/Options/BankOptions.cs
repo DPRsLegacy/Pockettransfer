@@ -14,4 +14,7 @@ public sealed class BankOptions
     /// Comma-separated usernames that are always promoted to admin on startup.
     /// </summary>
     public string AdminUsernames { get; set; } = "";
+    public int LoginFailureLimit { get; set; } = 5;
+    public int LoginIpAttemptLimit { get; set; } = 20;
+    public int LoginWindowMinutes { get; set; } = 15;
 }

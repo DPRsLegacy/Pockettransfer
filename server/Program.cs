@@ -4,12 +4,14 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pockettransfer.Server.Auth;
 using Pockettransfer.Server.Data;
 using Pockettransfer.Server.Options;
 using Pockettransfer.Server.Services;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,6 +48,7 @@ builder.Services.AddDbContext<BankDbContext>(o =>
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<SaveSessionStore>();
 builder.Services.AddSingleton<GameCatalog>();
+builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<PkHexService>();
@@ -94,6 +97,34 @@ builder.Services.AddRazorPages(o =>
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks().AddDbContextCheck<BankDbContext>();
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.OnRejected = async (ctx, ct) =>
+    {
+        var http = ctx.HttpContext;
+        if (http.Request.Path.StartsWithSegments("/api"))
+        {
+            http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await http.Response.WriteAsJsonAsync(new { error = LoginThrottle.TooManyAttempts }, ct);
+            return;
+        }
+
+        http.Response.Redirect("/Account/Login?limited=1");
+    };
+    o.AddPolicy("login", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: LoginThrottle.ClientKey(httpContext),
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 5,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0,
+            }));
+});
 
 var app = builder.Build();
 
@@ -111,6 +142,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapOpenApi();
