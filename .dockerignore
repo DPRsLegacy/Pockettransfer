@@ -1,0 +1,6 @@
+bin/
+obj/
+.git
+**/.git
+server/Data/*.db
+*.user

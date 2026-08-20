@@ -1,0 +1,293 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Pockettransfer.Server.Data;
+using Pockettransfer.Server.Options;
+using Pockettransfer.Server.Services;
+
+namespace Pockettransfer.Server.Controllers;
+
+[ApiController]
+[Route("api")]
+public sealed class ApiController(
+    AccountService accounts,
+    BankService bank,
+    PkHexService pkhex,
+    ConversionRules conversion,
+    SaveSessionStore sessions,
+    GameCatalog games,
+    BankDbContext db,
+    IOptions<BankOptions> options) : ControllerBase
+{
+    [AllowAnonymous]
+    [HttpPost("auth/register")]
+    public async Task<ActionResult> Register([FromBody] AuthRequest body, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            return BadRequest(new { error = "Username and password are required." });
+        try
+        {
+            var user = await accounts.RegisterAsync(body.Username, body.Password, ct);
+            return Ok(new { userId = user.Id, username = user.Username });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    [AllowAnonymous]
+    [HttpPost("auth/login")]
+    public async Task<ActionResult> Login([FromBody] AuthRequest body, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            return BadRequest(new { error = "Username and password are required." });
+        var user = await accounts.AuthenticateAsync(body.Username, body.Password, ct);
+        if (user is null)
+            return Unauthorized(new { error = "Invalid username or password." });
+        await accounts.EnsureBoxesAsync(user.Id, ct);
+        var token = await accounts.IssueDeviceTokenAsync(user, "api-login", "api", ct);
+        return Ok(new { token, username = user.Username, userId = user.Id });
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpPost("auth/devices")]
+    public async Task<ActionResult> CreatePairingCode(CancellationToken ct)
+    {
+        var code = await accounts.CreatePairingCodeAsync(CurrentUserId(), ct);
+        return Ok(new { code, expiresMinutes = options.Value.PairingMinutes });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("auth/devices/pair")]
+    public async Task<ActionResult> Pair([FromBody] PairRequest body, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.Code))
+            return BadRequest(new { error = "Pairing code is required." });
+        var result = await accounts.PairDeviceAsync(body.Code, body.Name ?? "console", body.Platform ?? "unknown", ct);
+        if (result is null)
+            return Unauthorized(new { error = "Invalid or expired pairing code." });
+        return Ok(new { token = result.Value.Token, email = result.Value.User.Email });
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpGet("games")]
+    public ActionResult GetGames() => Ok(games.Games);
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpGet("bank/boxes")]
+    public async Task<ActionResult> GetBank(CancellationToken ct)
+    {
+        var boxes = await bank.GetBoxesAsync(CurrentUserId(), ct);
+        return Ok(boxes.Select(b => new
+        {
+            b.Id,
+            b.Index,
+            b.Name,
+            slots = b.Pokemon.OrderBy(p => p.Slot).Select(p => bank.ToDto(p, pkhex, b.Index)),
+        }));
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpPost("saves/session")]
+    [RequestSizeLimit(10_000_000)]
+    public async Task<ActionResult> OpenSession(CancellationToken ct)
+    {
+        var file = Request.Form.Files.GetFile("file") ?? Request.Form.Files.FirstOrDefault();
+        if (file is null)
+            return BadRequest(new { error = "Upload a save as form field 'file'." });
+        if (file.Length > options.Value.MaxSaveBytes)
+            return BadRequest(new { error = "Save is too large." });
+
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        var sav = pkhex.LoadSave(ms.ToArray(), file.FileName);
+        if (sav is null)
+            return BadRequest(new { error = "PKHeX could not read this save file." });
+
+        var session = sessions.Create(CurrentUserId(), sav, file.FileName, TimeSpan.FromMinutes(options.Value.SessionMinutes));
+        return Ok(SessionSummary(session));
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpGet("saves/{id:guid}")]
+    public ActionResult GetSession(Guid id)
+    {
+        var session = sessions.Get(id, CurrentUserId());
+        return session is null ? NotFound(new { error = "Save session expired or missing." }) : Ok(SessionSummary(session));
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpGet("saves/{id:guid}/boxes")]
+    public ActionResult GetSaveBoxes(Guid id, [FromQuery] int box = 0)
+    {
+        var session = sessions.Get(id, CurrentUserId());
+        if (session is null)
+            return NotFound(new { error = "Save session expired or missing." });
+        var sav = session.Save;
+        if (box < 0 || box >= sav.BoxCount)
+            return BadRequest(new { error = "Box out of range." });
+
+        var slots = new List<object>(sav.BoxSlotCount);
+        for (var s = 0; s < sav.BoxSlotCount; s++)
+        {
+            var pk = sav.GetBoxSlotAtIndex(box, s);
+            if (pk.Species == 0)
+            {
+                slots.Add(new { slot = s, empty = true });
+                continue;
+            }
+
+            var legality = pkhex.Analyze(pk, sav);
+            slots.Add(new
+            {
+                slot = s,
+                empty = false,
+                species = (int)pk.Species,
+                speciesName = pkhex.SpeciesName(pk.Species),
+                pk.Form,
+                pk.Nickname,
+                originalTrainer = pk.OriginalTrainerName,
+                pk.IsShiny,
+                level = pk.CurrentLevel,
+                legal = legality.Valid,
+                locked = sav.IsBoxSlotLocked(box, s),
+            });
+        }
+
+        return Ok(new { box, boxCount = sav.BoxCount, slotCount = sav.BoxSlotCount, slots });
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpGet("saves/{id:guid}/file")]
+    public ActionResult DownloadSave(Guid id)
+    {
+        var session = sessions.Get(id, CurrentUserId());
+        if (session is null)
+            return NotFound(new { error = "Save session expired or missing." });
+        var bytes = pkhex.ExportSave(session.Save);
+        return File(bytes, "application/octet-stream", session.FileName);
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpDelete("saves/{id:guid}")]
+    public ActionResult CloseSession(Guid id)
+    {
+        sessions.Remove(id);
+        return NoContent();
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpPost("bank/deposit")]
+    public async Task<ActionResult> Deposit([FromBody] DepositRequest body, CancellationToken ct)
+    {
+        var session = sessions.Get(body.SessionId, CurrentUserId());
+        if (session is null)
+            return NotFound(new { error = "Save session expired or missing." });
+        try
+        {
+            var stored = await bank.DepositAsync(CurrentUserId(), session.Save, body.Box, body.Slot, body.BankBox, body.BankSlot, ct);
+            sessions.Touch(session, TimeSpan.FromMinutes(options.Value.SessionMinutes));
+            var destBox = await db.BankBoxes.AsNoTracking().FirstAsync(b => b.Id == stored.BankBoxId, ct);
+            return Ok(bank.ToDto(stored, pkhex, destBox.Index));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpPost("bank/withdraw")]
+    public async Task<ActionResult> Withdraw([FromBody] WithdrawRequest body, CancellationToken ct)
+    {
+        var session = sessions.Get(body.SessionId, CurrentUserId());
+        if (session is null)
+            return NotFound(new { error = "Save session expired or missing." });
+        try
+        {
+            await bank.WithdrawAsync(CurrentUserId(), session.Save, body.PokemonId, body.Box, body.Slot, ct);
+            sessions.Touch(session, TimeSpan.FromMinutes(options.Value.SessionMinutes));
+            return Ok(new { ok = true, sessionId = session.Id });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpPost("legality")]
+    public ActionResult Legality([FromBody] LegalityRequest body)
+    {
+        PKHeX.Core.PKM? pk = null;
+        PKHeX.Core.SaveFile? sav = null;
+        if (body.SessionId is { } sid && body.Box is { } box && body.Slot is { } slot)
+        {
+            var session = sessions.Get(sid, CurrentUserId());
+            if (session is null)
+                return NotFound(new { error = "Save session expired or missing." });
+            sav = session.Save;
+            pk = sav.GetBoxSlotAtIndex(box, slot);
+        }
+        else if (!string.IsNullOrEmpty(body.PkmBase64))
+        {
+            pk = pkhex.LoadPkmBySize(Convert.FromBase64String(body.PkmBase64));
+        }
+
+        if (pk is null || pk.Species == 0)
+            return BadRequest(new { error = "No Pokémon to analyze." });
+
+        var report = pkhex.Analyze(pk, sav);
+        string? transfer = null;
+        if (sav is not null)
+            conversion.CanTransferToSave(pk, sav, out transfer);
+
+        return Ok(new { report.Valid, report.Report, report.Issues, transfer });
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpGet("auth/devices")]
+    public async Task<ActionResult> ListDevices(CancellationToken ct)
+    {
+        var userId = CurrentUserId();
+        var devices = await db.Devices.AsNoTracking()
+            .Where(d => d.UserId == userId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => new { d.Id, d.Name, d.Platform, d.CreatedAt, d.LastUsedAt })
+            .ToListAsync(ct);
+        return Ok(devices);
+    }
+
+    private int CurrentUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.Parse(value!);
+    }
+
+    private static object SessionSummary(SaveSession session)
+    {
+        var sav = session.Save;
+        return new
+        {
+            sessionId = session.Id,
+            fileName = session.FileName,
+            game = sav.Version.ToString(),
+            generation = sav.Generation,
+            trainer = sav.OT,
+            tid = sav.DisplayTID,
+            boxCount = sav.BoxCount,
+            boxSlotCount = sav.BoxSlotCount,
+            checksumsValid = sav.ChecksumsValid,
+            expiresAt = session.ExpiresAt,
+        };
+    }
+}
+
+public sealed record AuthRequest(string Username, string Password);
+public sealed record PairRequest(string Code, string? Name, string? Platform);
+public sealed record DepositRequest(Guid SessionId, int Box, int Slot, int? BankBox, int? BankSlot);
+public sealed record WithdrawRequest(Guid SessionId, int PokemonId, int Box, int Slot);
+public sealed record LegalityRequest(Guid? SessionId, int? Box, int? Slot, string? PkmBase64);

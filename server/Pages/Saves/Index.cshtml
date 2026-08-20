@@ -1,0 +1,46 @@
+@page
+@model Pockettransfer.Server.Pages.Saves.IndexModel
+@{
+    ViewData["Title"] = "Save session";
+}
+<h1>Upload save</h1>
+<p>PKHeX reads the save in memory, then you can deposit/withdraw via the API or console. The patched file is downloaded from the session endpoint. Saves are not kept after the session expires.</p>
+<form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required />
+    <button class="btn btn-primary" type="submit">Open session</button>
+</form>
+@if (Model.Error is not null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+@if (Model.SessionId is Guid sid)
+{
+    <h2>@Model.Summary</h2>
+    <p>Session <code>@sid</code></p>
+    <p>
+        <a class="btn btn-secondary" href="/api/saves/@sid/file">Download patched save</a>
+    </p>
+    <p>
+        @for (var b = 0; b < Model.BoxCount; b++)
+        {
+            <a asp-page="/Saves/Index" asp-route-sessionId="@sid" asp-route-box="@b"
+               class="@(b == Model.Box ? "btn btn-dark" : "btn btn-outline-dark") btn-sm">@b</a>
+        }
+    </p>
+    <div class="slot-grid">
+        @foreach (var slot in Model.Slots)
+        {
+            if (slot.Empty)
+            {
+                <div class="slot empty">·</div>
+            }
+            else
+            {
+                <div class="slot @(slot.Legal ? "legal" : "illegal")">
+                    <span class="slot-name">@slot.Nickname</span>
+                    <span class="slot-meta">Lv @slot.Level</span>
+                </div>
+            }
+        }
+    </div>
+}

@@ -1,0 +1,169 @@
+{
+  "games": [
+    {
+      "id": "x",
+      "name": "Pokémon X",
+      "platform": "3ds",
+      "generation": 6,
+      "format": 6,
+      "pkhexVersion": "X",
+      "titleId": "0004000000055D00",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "y",
+      "name": "Pokémon Y",
+      "platform": "3ds",
+      "generation": 6,
+      "format": 6,
+      "pkhexVersion": "Y",
+      "titleId": "0004000000055E00",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "or",
+      "name": "Pokémon Omega Ruby",
+      "platform": "3ds",
+      "generation": 6,
+      "format": 6,
+      "pkhexVersion": "OR",
+      "titleId": "000400000011C400",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "as",
+      "name": "Pokémon Alpha Sapphire",
+      "platform": "3ds",
+      "generation": 6,
+      "format": 6,
+      "pkhexVersion": "AS",
+      "titleId": "000400000011C500",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "sun",
+      "name": "Pokémon Sun",
+      "platform": "3ds",
+      "generation": 7,
+      "format": 7,
+      "pkhexVersion": "SN",
+      "titleId": "0004000000164800",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "moon",
+      "name": "Pokémon Moon",
+      "platform": "3ds",
+      "generation": 7,
+      "format": 7,
+      "pkhexVersion": "MN",
+      "titleId": "0004000000175E00",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "us",
+      "name": "Pokémon Ultra Sun",
+      "platform": "3ds",
+      "generation": 7,
+      "format": 7,
+      "pkhexVersion": "US",
+      "titleId": "00040000001B5000",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "um",
+      "name": "Pokémon Ultra Moon",
+      "platform": "3ds",
+      "generation": 7,
+      "format": 7,
+      "pkhexVersion": "UM",
+      "titleId": "00040000001B5100",
+      "saveFiles": ["main"],
+      "archive": "savedata"
+    },
+    {
+      "id": "sw",
+      "name": "Pokémon Sword",
+      "platform": "switch",
+      "generation": 8,
+      "format": 8,
+      "pkhexVersion": "SW",
+      "titleId": "0100ABF008968000",
+      "saveFiles": ["main", "backup"],
+      "archive": "account"
+    },
+    {
+      "id": "sh",
+      "name": "Pokémon Shield",
+      "platform": "switch",
+      "generation": 8,
+      "format": 8,
+      "pkhexVersion": "SH",
+      "titleId": "01008DB008C2C000",
+      "saveFiles": ["main", "backup"],
+      "archive": "account"
+    },
+    {
+      "id": "bd",
+      "name": "Pokémon Brilliant Diamond",
+      "platform": "switch",
+      "generation": 8,
+      "format": 8,
+      "pkhexVersion": "BD",
+      "titleId": "0100000011D90000",
+      "saveFiles": ["main"],
+      "archive": "account"
+    },
+    {
+      "id": "sp",
+      "name": "Pokémon Shining Pearl",
+      "platform": "switch",
+      "generation": 8,
+      "format": 8,
+      "pkhexVersion": "SP",
+      "titleId": "010018E011D92000",
+      "saveFiles": ["main"],
+      "archive": "account"
+    },
+    {
+      "id": "pla",
+      "name": "Pokémon Legends: Arceus",
+      "platform": "switch",
+      "generation": 8,
+      "format": 8,
+      "pkhexVersion": "PLA",
+      "titleId": "01001F5010DFA000",
+      "saveFiles": ["main"],
+      "archive": "account"
+    },
+    {
+      "id": "sl",
+      "name": "Pokémon Scarlet",
+      "platform": "switch",
+      "generation": 9,
+      "format": 9,
+      "pkhexVersion": "SL",
+      "titleId": "0100A3D008C5C000",
+      "saveFiles": ["main", "backup"],
+      "archive": "account"
+    },
+    {
+      "id": "vl",
+      "name": "Pokémon Violet",
+      "platform": "switch",
+      "generation": 9,
+      "format": 9,
+      "pkhexVersion": "VL",
+      "titleId": "01008F600124C000",
+      "saveFiles": ["main", "backup"],
+      "archive": "account"
+    }
+  ]
+}

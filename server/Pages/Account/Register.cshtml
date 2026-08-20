@@ -1,0 +1,32 @@
+@page
+@model Pockettransfer.Server.Pages.Account.RegisterModel
+@{
+    ViewData["Title"] = "Register";
+    Layout = "_AuthLayout";
+}
+<div class="auth-card">
+    <h1>Create account</h1>
+    <p class="auth-sub">Username and password — use the same login on phone or PC.</p>
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    <form method="post" class="pt-form">
+        <label class="pt-label">
+            Username
+            <input asp-for="Username" class="form-control" autocomplete="username" required
+                   pattern="[a-z0-9_]{3,32}" title="3–32 lowercase letters, numbers, underscore" />
+            <span class="form-text">Lowercase letters, numbers, underscore only.</span>
+        </label>
+        <label class="pt-label">
+            Password
+            <input asp-for="Password" type="password" class="form-control" autocomplete="new-password" required minlength="8" />
+        </label>
+        <label class="pt-label">
+            Confirm password
+            <input asp-for="ConfirmPassword" type="password" class="form-control" autocomplete="new-password" required minlength="8" />
+        </label>
+        <button type="submit" class="btn btn-primary w-100">Register</button>
+    </form>
+    <p class="auth-footer">Already have an account? <a asp-page="/Account/Login">Log in</a></p>
+</div>

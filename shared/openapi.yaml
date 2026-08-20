@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: Pockettransfer Bank API
+  version: 1.0.0
+  description: >
+    Pokémon Bank/HOME-style storage. PKHeX.Core on the server is the legality
+    authority. Consoles authenticate with a device token.
+servers:
+  - url: https://bank.saltbox.cc
+paths:
+  /api/auth/register:
+    post:
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        '200':
+          description: Registered
+        '409':
+          description: Email already used
+  /api/auth/login:
+    post:
+      summary: Log in and issue a device token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        '200':
+          description: Token for Authorization Bearer header
+        '401':
+          description: Invalid credentials
+  /api/auth/devices:
+    post:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: Create a one-time pairing code
+      responses:
+        '200':
+          description: Pairing code
+    get:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: List paired devices
+      responses:
+        '200':
+          description: Devices
+  /api/auth/devices/pair:
+    post:
+      summary: Exchange pairing code for a device token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairRequest'
+      responses:
+        '200':
+          description: Device token
+        '401':
+          description: Invalid or expired code
+  /api/games:
+    get:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: Supported title IDs and save file names
+      responses:
+        '200':
+          description: Game matrix
+  /api/bank/boxes:
+    get:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: List bank boxes and stored Pokémon metadata
+      responses:
+        '200':
+          description: Boxes
+  /api/saves/session:
+    post:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: Upload a save into an ephemeral PKHeX session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Session id and trainer summary
+  /api/saves/{id}:
+    get:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session summary
+    delete:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '204':
+          description: Closed
+  /api/saves/{id}/boxes:
+    get:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: box
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Box slots with PKHeX legality flags
+  /api/saves/{id}/file:
+    get:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Patched save bytes (PKHeX Write)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /api/bank/deposit:
+    post:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: Move a save slot into the bank (PKHeX legality)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '200':
+          description: Stored Pokémon
+        '400':
+          description: Illegal, empty, or locked
+  /api/bank/withdraw:
+    post:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: Convert and write a banked Pokémon into a save slot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '200':
+          description: Save session updated
+  /api/legality:
+    post:
+      security:
+        - deviceToken: []
+        - cookieAuth: []
+      summary: PKHeX LegalityAnalysis without moving the Pokémon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalityRequest'
+      responses:
+        '200':
+          description: Report
+  /health:
+    get:
+      summary: Database connectivity
+      responses:
+        '200':
+          description: OK
+components:
+  securitySchemes:
+    deviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Also accept Authorization Bearer pt_…
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: pt_auth
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    AuthRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    PairRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+          enum: [3ds, switch, api, web]
+    DepositRequest:
+      type: object
+      required: [sessionId, box, slot]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        box:
+          type: integer
+        slot:
+          type: integer
+        bankBox:
+          type: integer
+          nullable: true
+        bankSlot:
+          type: integer
+          nullable: true
+    WithdrawRequest:
+      type: object
+      required: [sessionId, pokemonId, box, slot]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        pokemonId:
+          type: integer
+        box:
+          type: integer
+        slot:
+          type: integer
+    LegalityRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        box:
+          type: integer
+        slot:
+          type: integer
+        pkmBase64:
+          type: string

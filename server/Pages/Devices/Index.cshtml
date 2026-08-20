@@ -1,0 +1,30 @@
+@page
+@model Pockettransfer.Server.Pages.Devices.IndexModel
+@{
+    ViewData["Title"] = "Devices";
+}
+<h1>Console pairing</h1>
+<p>Create a one-time code, then enter it on the 3DS or Switch app (or <code>POST /api/auth/devices/pair</code>).</p>
+<form method="post">
+    <button class="btn btn-primary" type="submit">Generate pairing code</button>
+</form>
+@if (Model.PairingCode is not null)
+{
+    <p class="pairing-code">@Model.PairingCode</p>
+    <p>Valid for a few minutes. The console stores a device token in its config file after pairing.</p>
+}
+<h2>Paired devices</h2>
+<table class="table">
+    <thead><tr><th>Name</th><th>Platform</th><th>Created</th><th>Last used</th></tr></thead>
+    <tbody>
+    @foreach (var d in Model.Devices)
+    {
+        <tr>
+            <td>@d.Name</td>
+            <td>@d.Platform</td>
+            <td>@d.CreatedAt.UtcDateTime.ToString("u")</td>
+            <td>@(d.LastUsedAt?.UtcDateTime.ToString("u") ?? "—")</td>
+        </tr>
+    }
+    </tbody>
+</table>

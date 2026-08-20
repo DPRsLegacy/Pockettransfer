@@ -1,0 +1,27 @@
+@page
+@model Pockettransfer.Server.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Log in";
+    Layout = "_AuthLayout";
+}
+<div class="auth-card">
+    <h1>Log in</h1>
+    <p class="auth-sub">View your bank from any browser.</p>
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    <form method="post" class="pt-form">
+        <input type="hidden" asp-for="ReturnUrl" />
+        <label class="pt-label">
+            Username
+            <input asp-for="Username" class="form-control" autocomplete="username" required autofocus />
+        </label>
+        <label class="pt-label">
+            Password
+            <input asp-for="Password" type="password" class="form-control" autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="btn btn-primary w-100">Log in</button>
+    </form>
+    <p class="auth-footer">No account? <a asp-page="/Account/Register">Register</a></p>
+</div>
