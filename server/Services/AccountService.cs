@@ -21,6 +21,8 @@ public sealed class AccountService(
         username = NormalizeUsername(username);
         if (!UsernamePattern.IsMatch(username))
             throw new InvalidOperationException("Username must be 3–32 characters: lowercase letters, numbers, underscore.");
+        if (password.Length < 8)
+            throw new InvalidOperationException("Password must be at least 8 characters.");
         if (await db.Users.AnyAsync(u => u.Username == username, ct))
             throw new InvalidOperationException("That username is already taken.");
 
@@ -113,6 +115,31 @@ public sealed class AccountService(
         db.PairingCodes.Remove(row);
         await db.SaveChangesAsync(ct);
         return (row.User, token);
+    }
+
+    /// <summary>
+    /// First-connect enroll: consume the newest live pairing code, or (if this
+    /// instance has exactly one account) issue a token for that user.
+    /// </summary>
+    public async Task<(User User, string Token)?> EnrollConsoleAsync(string name, string platform, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expired = db.PairingCodes.Where(c => c.ExpiresAt < now);
+        db.PairingCodes.RemoveRange(expired);
+        await db.SaveChangesAsync(ct);
+
+        var pending = await db.PairingCodes.Include(c => c.User)
+            .OrderByDescending(c => c.Id)
+            .FirstOrDefaultAsync(ct);
+        if (pending is not null)
+            return await PairDeviceAsync(pending.Code, name, platform, ct);
+
+        if (await db.Users.CountAsync(ct) != 1)
+            return null;
+
+        var user = await db.Users.SingleAsync(ct);
+        var token = await IssueDeviceTokenAsync(user, name, platform, ct);
+        return (user, token);
     }
 
     public async Task<string> IssueDeviceTokenAsync(User user, string? name, string? platform, CancellationToken ct)

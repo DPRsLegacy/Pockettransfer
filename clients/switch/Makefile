@@ -20,7 +20,7 @@ CFLAGS   := -g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES) $(INCLUDE) -D__S
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
-LIBS     := -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lnx
+LIBS     := -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lnx
 
 LIBDIRS  := $(PORTLIBS) $(LIBNX)
 
@@ -35,6 +35,7 @@ export OFILES := $(OFILES_SRC)
 export INCLUDE := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
     $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+export LD := $(CC)
 
 .PHONY: $(BUILD) clean all
 

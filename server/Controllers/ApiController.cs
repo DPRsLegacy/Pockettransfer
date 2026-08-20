@@ -30,7 +30,9 @@ public sealed class ApiController(
         try
         {
             var user = await accounts.RegisterAsync(body.Username, body.Password, ct);
-            return Ok(new { userId = user.Id, username = user.Username });
+            var token = await accounts.IssueDeviceTokenAsync(
+                user, body.Name ?? "console", body.Platform ?? "api", ct);
+            return Ok(new { token, userId = user.Id, username = user.Username });
         }
         catch (InvalidOperationException ex)
         {
@@ -48,7 +50,8 @@ public sealed class ApiController(
         if (user is null)
             return Unauthorized(new { error = "Invalid username or password." });
         await accounts.EnsureBoxesAsync(user.Id, ct);
-        var token = await accounts.IssueDeviceTokenAsync(user, "api-login", "api", ct);
+        var token = await accounts.IssueDeviceTokenAsync(
+            user, body.Name ?? "api-login", body.Platform ?? "api", ct);
         return Ok(new { token, username = user.Username, userId = user.Id });
     }
 
@@ -70,6 +73,25 @@ public sealed class ApiController(
         if (result is null)
             return Unauthorized(new { error = "Invalid or expired pairing code." });
         return Ok(new { token = result.Value.Token, email = result.Value.User.Email });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("auth/devices/enroll")]
+    public async Task<ActionResult> Enroll([FromBody] EnrollRequest? body, CancellationToken ct)
+    {
+        var result = await accounts.EnrollConsoleAsync(
+            body?.Name ?? "console",
+            body?.Platform ?? "unknown",
+            ct);
+        if (result is null)
+        {
+            return Conflict(new
+            {
+                error = "No pairing waiting. Log in on the website, open Devices, generate a pairing code, then try again.",
+            });
+        }
+
+        return Ok(new { token = result.Value.Token, username = result.Value.User.Username });
     }
 
     [Authorize(Policy = "AnyUser")]
@@ -286,8 +308,9 @@ public sealed class ApiController(
     }
 }
 
-public sealed record AuthRequest(string Username, string Password);
+public sealed record AuthRequest(string Username, string Password, string? Name = null, string? Platform = null);
 public sealed record PairRequest(string Code, string? Name, string? Platform);
+public sealed record EnrollRequest(string? Name, string? Platform);
 public sealed record DepositRequest(Guid SessionId, int Box, int Slot, int? BankBox, int? BankSlot);
 public sealed record WithdrawRequest(Guid SessionId, int PokemonId, int Box, int Slot);
 public sealed record LegalityRequest(Guid? SessionId, int? Box, int? Slot, string? PkmBase64);

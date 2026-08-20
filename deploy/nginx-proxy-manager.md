@@ -123,7 +123,7 @@ Save. Open `https://bank.saltbox.cc` and register an account.
 }
 ```
 
-Pair: web UI → **Devices** → generate code → `pair.txt` on SD → Pair in the homebrew app.
+Pair: launch the console app → **Create account** or **Log in** with the system keyboard. The token is stored automatically. Optional: web UI → **Devices** → pairing code.
 
 ## 5. 3DS CA bundle
 

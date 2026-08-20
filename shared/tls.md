@@ -37,7 +37,7 @@ Switch `switch-curl` typically uses system CAs; you can still ship `cacert.pem` 
 
 ## Device auth
 
-Consoles send `Authorization: Bearer pt_...` or `X-Device-Token`. Pair from **Devices** on `https://bank.saltbox.cc`.
+Consoles send `Authorization: Bearer pt_...` or `X-Device-Token`. Create an account or log in on the console; it stores the token. Pairing codes on **Devices** are optional.
 
 ## Forwarded headers
 

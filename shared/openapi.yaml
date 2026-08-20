@@ -67,6 +67,19 @@ paths:
           description: Device token
         '401':
           description: Invalid or expired code
+  /api/auth/devices/enroll:
+    post:
+      summary: First-connect enroll (claim a waiting pairing code, or the sole user)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+      responses:
+        '200':
+          description: Device token
+        '409':
+          description: No pairing waiting and more than one user exists
   /api/games:
     get:
       security:
@@ -234,12 +247,26 @@ components:
           type: string
         password:
           type: string
+        name:
+          type: string
+          description: Device display name (console clients send 3DS or Switch)
+        platform:
+          type: string
+          enum: [3ds, switch, api, web]
     PairRequest:
       type: object
       required: [code]
       properties:
         code:
           type: string
+        name:
+          type: string
+        platform:
+          type: string
+          enum: [3ds, switch, api, web]
+    EnrollRequest:
+      type: object
+      properties:
         name:
           type: string
         platform:

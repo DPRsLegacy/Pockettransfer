@@ -54,3 +54,45 @@ int json_get_int(const char *json, const char *key, int *out)
     *out = atoi(v);
     return 1;
 }
+
+int json_escape(const char *in, char *out, size_t n)
+{
+    size_t o = 0;
+    if (!in || !out || n == 0)
+        return 0;
+    while (*in && o + 2 < n) {
+        unsigned char c = (unsigned char)*in++;
+        if (c == '"' || c == '\\') {
+            if (o + 3 >= n)
+                break;
+            out[o++] = '\\';
+            out[o++] = (char)c;
+        } else if (c == '\n') {
+            if (o + 3 >= n)
+                break;
+            out[o++] = '\\';
+            out[o++] = 'n';
+        } else if (c >= 0x20) {
+            out[o++] = (char)c;
+        }
+    }
+    out[o] = 0;
+    return (int)o;
+}
+
+int json_auth_body(char *out, size_t n, const char *username, const char *password,
+                   const char *name, const char *platform)
+{
+    char u[80], p[160], nm[40], pl[24];
+    int wrote;
+    if (!out || n == 0)
+        return 0;
+    json_escape(username ? username : "", u, sizeof(u));
+    json_escape(password ? password : "", p, sizeof(p));
+    json_escape(name ? name : "console", nm, sizeof(nm));
+    json_escape(platform ? platform : "unknown", pl, sizeof(pl));
+    wrote = snprintf(out, n,
+                     "{\"username\":\"%s\",\"password\":\"%s\",\"name\":\"%s\",\"platform\":\"%s\"}",
+                     u, p, nm, pl);
+    return wrote > 0 && (size_t)wrote < n;
+}

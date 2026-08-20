@@ -77,13 +77,9 @@ Pokémon bytes live in **PostgreSQL** inside the `postgres` container volume. Sa
 
 ## 6. Console clients
 
-On 3DS/Switch, set `config.json`:
+Host is hardcoded to `https://bank.saltbox.cc`. First launch: create an account or log in on the console keyboard; the app stores the device token.
 
-```json
-{"host":"https://bank.saltbox.cc","token":"pt_..."}
-```
-
-See [../nginx-proxy-manager.md](../nginx-proxy-manager.md) and [../config.example.json](../config.example.json).
+See [../nginx-proxy-manager.md](../nginx-proxy-manager.md).
 
 ## 7. Updates
 

@@ -37,7 +37,7 @@ Open **`https://bank.saltbox.cc`** (or your NPM URL) in a browser on PC or phone
 
 ## Console clients
 
-CFW required. Set `"host": "https://bank.saltbox.cc"` in config (see deploy guide).
+CFW required. Host is always `https://bank.saltbox.cc`. First launch: create an account or log in with the console keyboard — the app stores the device token itself.
 
 - 3DS: [clients/3ds](clients/3ds)
 - Switch: [clients/switch](clients/switch)

@@ -14,6 +14,7 @@
 #define CONFIG_DIR "sdmc:/3ds/pockettransfer"
 #define CONFIG_PATH CONFIG_DIR "/config.json"
 #define BACKUP_DIR CONFIG_DIR "/backups"
+#define PT_HOST "https://bank.saltbox.cc"
 
 typedef struct {
     char host[256];
@@ -30,20 +31,33 @@ static void ensure_dirs(void)
     mkdir(BACKUP_DIR, 0777);
 }
 
+static void trim_inplace(char *s)
+{
+    size_t i = 0, n;
+    while (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')
+        i++;
+    if (i)
+        memmove(s, s + i, strlen(s + i) + 1);
+    n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\r' || s[n - 1] == '\n'))
+        s[--n] = 0;
+}
+
 static void load_config(void)
 {
     FILE *f = fopen(CONFIG_PATH, "rb");
     char buf[1024];
     size_t n;
     memset(&g_cfg, 0, sizeof(g_cfg));
-    snprintf(g_cfg.host, sizeof(g_cfg.host), "https://bank.saltbox.cc");
+    snprintf(g_cfg.host, sizeof(g_cfg.host), "%s", PT_HOST);
     if (!f)
         return;
     n = fread(buf, 1, sizeof(buf) - 1, f);
     buf[n] = 0;
     fclose(f);
-    json_get_string(buf, "host", g_cfg.host, sizeof(g_cfg.host));
     json_get_string(buf, "token", g_cfg.token, sizeof(g_cfg.token));
+    trim_inplace(g_cfg.token);
+    snprintf(g_cfg.host, sizeof(g_cfg.host), "%s", PT_HOST);
 }
 
 static void save_config(void)
@@ -133,46 +147,209 @@ static void backup_bytes(const char *id, const uint8_t *data, u64 size)
     fclose(f);
 }
 
-static void pair_device(void)
+static int apply_token(const char *token)
+{
+    if (!token || !token[0])
+        return -1;
+    snprintf(g_cfg.token, sizeof(g_cfg.token), "%s", token);
+    pt_http_set_token(g_cfg.token);
+    save_config();
+    return 0;
+}
+
+static int enroll_device(void)
+{
+    char url[320], token[160], err[256];
+    HttpBuffer resp = {0};
+    long status = 0;
+    url_join(url, sizeof(url), "/api/auth/devices/enroll");
+    if (pt_http_request("POST", url, "{\"name\":\"3DS\",\"platform\":\"3ds\"}",
+                        "application/json", &resp, &status) != 0) {
+        printf("HTTP error talking to %s\n", PT_HOST);
+        http_buffer_free(&resp);
+        return -1;
+    }
+    if (status != 200 || !json_get_string(resp.data ? resp.data : "", "token", token, sizeof(token))) {
+        json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
+        printf("Enroll failed (%ld): %s\n", status, err[0] ? err : "no token");
+        http_buffer_free(&resp);
+        return -1;
+    }
+    apply_token(token);
+    printf("Paired. Token saved.\n");
+    http_buffer_free(&resp);
+    return 0;
+}
+
+static int pair_with_code_file(void)
 {
     char code[16] = {0};
     char url[320], body[128], token[160], err[256];
     HttpBuffer resp = {0};
     long status = 0;
-    consoleSelect(&bottom);
-    consoleClear();
-    printf("Enter 8-character pairing code from the website.\n");
-    /* Homebrew has no full keyboard here: read from config overlay file. */
-    printf("Write the code into:\n  sdmc:/3ds/pockettransfer/pair.txt\nthen press A.\n");
-    wait_a();
     FILE *f = fopen(CONFIG_DIR "/pair.txt", "rb");
-    if (!f) {
-        printf("pair.txt missing.\n");
-        wait_a();
-        return;
-    }
+    if (!f)
+        return 1;
     fread(code, 1, sizeof(code) - 1, f);
     fclose(f);
+    trim_inplace(code);
+    if (!code[0])
+        return 1;
     snprintf(body, sizeof(body), "{\"code\":\"%s\",\"name\":\"3DS\",\"platform\":\"3ds\"}", code);
     url_join(url, sizeof(url), "/api/auth/devices/pair");
     if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0) {
         printf("HTTP error\n");
-        wait_a();
-        return;
+        http_buffer_free(&resp);
+        return -1;
     }
     if (status != 200 || !json_get_string(resp.data ? resp.data : "", "token", token, sizeof(token))) {
         json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
         printf("Pair failed (%ld): %s\n", status, err);
         http_buffer_free(&resp);
-        wait_a();
-        return;
+        return -1;
     }
-    snprintf(g_cfg.token, sizeof(g_cfg.token), "%s", token);
-    pt_http_set_token(g_cfg.token);
-    save_config();
-    printf("Paired. Token stored.\n");
+    apply_token(token);
+    printf("Paired from pair.txt. Token saved.\n");
     http_buffer_free(&resp);
-    wait_a();
+    return 0;
+}
+
+static void restore_consoles(void)
+{
+    consoleInit(GFX_TOP, &top);
+    consoleInit(GFX_BOTTOM, &bottom);
+}
+
+static int prompt_text(const char *hint, char *out, size_t n, int password, int max_len)
+{
+    SwkbdState swkbd;
+    SwkbdButton button;
+    memset(out, 0, n);
+    swkbdInit(&swkbd, SWKBD_TYPE_WESTERN, 2, max_len);
+    swkbdSetHintText(&swkbd, hint);
+    swkbdSetValidation(&swkbd, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
+    swkbdSetFeatures(&swkbd, SWKBD_DARKEN_TOP_SCREEN | SWKBD_DEFAULT_QWERTY);
+    if (password)
+        swkbdSetPasswordMode(&swkbd, SWKBD_PASSWORD_HIDE);
+    button = swkbdInputText(&swkbd, out, n);
+    restore_consoles();
+    trim_inplace(out);
+    return (button == SWKBD_BUTTON_CONFIRM && out[0]) ? 0 : -1;
+}
+
+static int pick_items(const char *title, const char **items, int count)
+{
+    int sel = 0, i;
+    while (aptMainLoop()) {
+        hidScanInput();
+        u32 k = hidKeysDown();
+        consoleSelect(&top);
+        consoleClear();
+        printf("%s\n\n", title);
+        for (i = 0; i < count; i++)
+            printf("%c %s\n", i == sel ? '>' : ' ', items[i]);
+        if (k & KEY_DUP)
+            sel = (sel + count - 1) % count;
+        if (k & KEY_DDOWN)
+            sel = (sel + 1) % count;
+        if (k & KEY_B)
+            return -1;
+        if (k & KEY_A)
+            return sel;
+        gfxFlushBuffers();
+        gfxSwapBuffers();
+        gspWaitForVBlank();
+    }
+    return -1;
+}
+
+static int auth_request(int is_register)
+{
+    char user[40] = {0}, pass[72] = {0}, pass2[72] = {0};
+    char body[400], url[320], token[160], err[256], username[40];
+    HttpBuffer resp = {0};
+    long status = 0;
+
+    consoleSelect(&bottom);
+    consoleClear();
+    printf("%s on %s\nSystem keyboard next.\n", is_register ? "Create account" : "Log in", PT_HOST);
+
+    if (prompt_text("Username (3-32: a-z, 0-9, _)", user, sizeof(user), 0, 32) != 0)
+        return -1;
+    if (prompt_text(is_register ? "New password (8+ characters)" : "Password",
+                    pass, sizeof(pass), 1, 64) != 0)
+        return -1;
+    if (is_register) {
+        if (prompt_text("Confirm password", pass2, sizeof(pass2), 1, 64) != 0)
+            return -1;
+        if (strcmp(pass, pass2) != 0) {
+            consoleSelect(&bottom);
+            consoleClear();
+            printf("Passwords do not match.\n");
+            return -1;
+        }
+        if (strlen(pass) < 8) {
+            consoleSelect(&bottom);
+            consoleClear();
+            printf("Password must be at least 8 characters.\n");
+            return -1;
+        }
+    }
+
+    if (!json_auth_body(body, sizeof(body), user, pass, "3DS", "3ds")) {
+        printf("Could not build request.\n");
+        return -1;
+    }
+    url_join(url, sizeof(url), is_register ? "/api/auth/register" : "/api/auth/login");
+    consoleSelect(&bottom);
+    consoleClear();
+    printf("%s...\n", is_register ? "Creating account" : "Logging in");
+    if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0) {
+        printf("HTTP error talking to %s\n", PT_HOST);
+        http_buffer_free(&resp);
+        return -1;
+    }
+    if (status != 200 || !json_get_string(resp.data ? resp.data : "", "token", token, sizeof(token))) {
+        json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
+        printf("Failed (%ld): %s\n", status, err[0] ? err : "no token");
+        http_buffer_free(&resp);
+        return -1;
+    }
+    apply_token(token);
+    if (!json_get_string(resp.data, "username", username, sizeof(username)))
+        snprintf(username, sizeof(username), "%s", user);
+    printf("Signed in as %s.\nConsole paired. Token saved.\n", username);
+    http_buffer_free(&resp);
+    return 0;
+}
+
+static int account_flow(void)
+{
+    const char *items[] = {"Create account", "Log in", "Pair from website", "Cancel"};
+    int choice;
+    while (aptMainLoop()) {
+        choice = pick_items("Pockettransfer account\nHost: " PT_HOST, items, 4);
+        if (choice < 0 || choice == 3)
+            return g_cfg.token[0] ? 0 : -1;
+        consoleSelect(&bottom);
+        consoleClear();
+        if (choice == 0 || choice == 1) {
+            if (auth_request(choice == 0) == 0) {
+                wait_a();
+                return 0;
+            }
+            wait_a();
+            continue;
+        }
+        printf("Pairing via website...\n");
+        if (pair_with_code_file() == 0 || enroll_device() == 0) {
+            wait_a();
+            return 0;
+        }
+        printf("\nGenerate a pairing code on the website, then retry.\n");
+        wait_a();
+    }
+    return g_cfg.token[0] ? 0 : -1;
 }
 
 static int select_game(int platform_3ds)
@@ -347,6 +524,8 @@ int main(int argc, char **argv)
     pt_http_init("romfs:/cacert.pem");
     if (g_cfg.token[0])
         pt_http_set_token(g_cfg.token);
+    else if (account_flow() != 0)
+        goto shutdown;
 
     while (aptMainLoop()) {
         hidScanInput();
@@ -355,7 +534,7 @@ int main(int argc, char **argv)
         consoleClear();
         printf("Pockettransfer (3DS)\nHost: %s\nToken: %s\n\n", g_cfg.host,
                g_cfg.token[0] ? "(saved)" : "(none)");
-        printf("%c Pair device\n%c Deposit/withdraw\n%c Quit\n",
+        printf("%c Deposit/withdraw\n%c Account\n%c Quit\n",
                sel == 0 ? '>' : ' ', sel == 1 ? '>' : ' ', sel == 2 ? '>' : ' ');
         if (k & KEY_DUP)
             sel = (sel + 2) % 3;
@@ -364,14 +543,15 @@ int main(int argc, char **argv)
         if (k & KEY_START || (k & KEY_A && sel == 2))
             break;
         if (k & KEY_A && sel == 0)
-            pair_device();
-        if (k & KEY_A && sel == 1)
             transfer_flow();
+        if (k & KEY_A && sel == 1)
+            account_flow();
         gfxFlushBuffers();
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
 
+shutdown:
     pt_http_shutdown();
     romfsExit();
     fsExit();

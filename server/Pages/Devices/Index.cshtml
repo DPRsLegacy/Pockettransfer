@@ -6,7 +6,7 @@
 <div class="pt-panel">
     <div class="pt-panel-header">
         <h1>Console pairing</h1>
-        <p class="pt-panel-sub">Link your 3DS or Switch to deposit and withdraw Pokémon.</p>
+        <p class="pt-panel-sub">Consoles can create an account or log in with the system keyboard and pair automatically. You can still generate a pairing code here if you want.</p>
     </div>
     <form method="post" class="mb-3">
         <button class="btn btn-primary" type="submit">Generate pairing code</button>
@@ -14,7 +14,7 @@
     @if (Model.PairingCode is not null)
     {
         <p class="pairing-code">@Model.PairingCode</p>
-        <p class="text-muted">Valid for a few minutes. Enter this code on your console app, or send it via <code>POST /api/auth/devices/pair</code>.</p>
+        <p class="text-muted">Valid for a few minutes. Leave this page open and launch the 3DS/Switch app — it fills in the token on first connect. You do not need to type the code on the console.</p>
     }
 </div>
 

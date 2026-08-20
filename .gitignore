@@ -14,10 +14,12 @@ Data/keys/
 *.cia
 *.3dsx
 *.elf
+*.smdh
 *.nacp
 build/
 clients/3ds/build/
 clients/switch/build/
+clients/3ds/cia/tools/
 clients/certs/cacert.pem
 .env
 .DS_Store
