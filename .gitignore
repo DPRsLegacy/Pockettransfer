@@ -16,6 +16,7 @@ Data/keys/
 *.elf
 *.smdh
 *.nacp
+*.pem
 build/
 clients/3ds/build/
 clients/switch/build/
