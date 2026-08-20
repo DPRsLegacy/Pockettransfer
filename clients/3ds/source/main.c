@@ -322,15 +322,53 @@ static int read_save_file(FS_Archive arch, const char *name, uint8_t **out, u64 
 }
 
 /* PKSM: delete NAND anti-savegame-restore value or the game hangs on the 3DS logo.
-   packed as ((SECUREVALUE_SLOT_SD << 32) | (lowId & 0xFFFFFF00)). */
+   3dsx/Rosalina already has full FS; CIA needs SeedDB/CardBoard and we wipe every
+   slot packing PKSM and Checkpoint use. */
+static Result delete_secure_value_one(u32 slot, u32 packed, u8 *existed)
+{
+    u64 in = ((u64)slot << 32) | packed;
+    *existed = 0;
+    return FSUSER_ControlSecureSave(SECURESAVE_ACTION_DELETE, &in, sizeof(in), existed, 1);
+}
+
 static Result delete_secure_value(u64 title)
 {
-    u8 existed = 0;
-    u64 in = ((u64)SECUREVALUE_SLOT_SD << 32) | ((u32)title & 0xFFFFFF00u);
-    Result rc = FSUSER_ControlSecureSave(SECURESAVE_ACTION_DELETE, &in, sizeof(in), &existed, 1);
-    pt_log("secure value delete 0x%08lx existed=%u tid=%016llx",
-           (unsigned long)rc, (unsigned)existed, (unsigned long long)title);
-    return rc;
+    u32 low = (u32)title;
+    u32 unique = (u32)((title >> 8) & 0xFFFFF);
+    u8 variation = (u8)(title & 0xFF);
+    u32 packed_pksm = low & 0xFFFFFF00u;
+    u32 packed_full = low & 0xFFFFFFu;
+    u32 slots[2] = { SECUREVALUE_SLOT_SD, 0 };
+    u32 packings[2] = { packed_pksm, packed_full };
+    Result last = 0;
+    int s, p;
+    bool found = false;
+
+    {
+        bool exists = false;
+        u64 val = 0;
+        Result grc = FSUSER_GetSaveDataSecureValue(&exists, &val, SECUREVALUE_SLOT_SD, unique,
+                                                   variation);
+        pt_log("secure get sd rc=0x%08lx exists=%d val=%llu", (unsigned long)grc, exists ? 1 : 0,
+               (unsigned long long)val);
+        grc = FSUSER_GetSaveDataSecureValue(&exists, &val, 0, unique, variation);
+        pt_log("secure get slot0 rc=0x%08lx exists=%d val=%llu", (unsigned long)grc, exists ? 1 : 0,
+               (unsigned long long)val);
+    }
+
+    for (s = 0; s < 2; s++) {
+        for (p = 0; p < 2; p++) {
+            u8 existed = 0;
+            last = delete_secure_value_one(slots[s], packings[p], &existed);
+            pt_log("secure delete slot=0x%lx pack=0x%08lx rc=0x%08lx existed=%u",
+                   (unsigned long)slots[s], (unsigned long)packings[p], (unsigned long)last,
+                   (unsigned)existed);
+            if (existed)
+                found = true;
+        }
+    }
+    pt_log("secure value found=%d tid=%016llx", found ? 1 : 0, (unsigned long long)title);
+    return last;
 }
 
 static int write_save_file(FS_Archive arch, const char *name, const uint8_t *data, u64 size,
@@ -771,6 +809,7 @@ int main(int argc, char **argv)
     g_have_am = R_SUCCEEDED(amInit());
     romfsInit();
     pt_log_init("3ds");
+    pt_log("entry %s", envIsHomebrew() ? "3dsx" : "cia");
     pt_log("amInit %s", g_have_am ? "ok" : "fail");
     log_3ds_clock();
     {

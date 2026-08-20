@@ -52,22 +52,29 @@ ifneq ($(ROMFS),)
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: $(BUILD) clean all cia
+.PHONY: $(BUILD) clean all cia cacert
 
-all: $(BUILD)
+all: cacert $(BUILD)
 
-cia: $(BUILD) $(OUTPUT).cia
+cia: cacert $(BUILD) $(OUTPUT).cia
 
-$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py
+romfs/cacert.pem:
+	@curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem -o $@
+	@echo fetched ... romfs/cacert.pem
+
+cacert: romfs/cacert.pem
+
+$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem
 	@$(PYTHON) cia/fetch_tools.py
 	@$(PYTHON) cia/gen_assets.py $(BUILD)
 	@$(BANNERTOOL) makebanner -i $(BUILD)/banner.png -a $(BUILD)/banner.wav -o $(BUILD)/banner.bnr
-	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(ICON)" -f visible -o $(BUILD)/icon.icn
+	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(ICON)" -f nosavebackups,visible -o $(BUILD)/icon.icn
 	@$(STRIP) $(OUTPUT).elf -o $(BUILD)/stripped.elf
 	@$(MAKEROM) -f cia -o $@ -elf $(BUILD)/stripped.elf -rsf cia/app.rsf \
 		-icon $(BUILD)/icon.icn -banner $(BUILD)/banner.bnr -exefslogo -target t \
 		-DAPP_TITLE="$(APP_TITLE)" -DAPP_PRODUCT_CODE="$(APP_PRODUCT_CODE)" \
-		-DAPP_UNIQUE_ID="$(APP_UNIQUE_ID)"
+		-DAPP_UNIQUE_ID="$(APP_UNIQUE_ID)" \
+		-DAPP_ROMFS="$(CURDIR)/romfs"
 	@echo built ... $(notdir $@)
 
 $(BUILD):

@@ -25,8 +25,33 @@ AccessControlInfo:
     - CategoryHardwareCheck
     - CategoryFileSystemTool
     - Debug
+    - TwlCardBackup
+    - TwlNandData
+    - Boss
     - DirectSdmc
+    - Core
+    - CtrNandRo
+    - CtrNandRw
+    - CtrNandRoWrite
+    - CategorySystemSettings
+    - CardBoard
+    - ExportImportIvs
     - DirectSdmcWrite
+    - SwitchCleanup
+    - SaveDataMove
+    - Shop
+    - Shell
+    - CategoryHomeMenu
+    - SeedDB
+  IoAccessControl:
+    - FsMountNand
+    - FsMountNandRoWrite
+    - FsMountTwln
+    - FsMountWnand
+    - FsMountCardSpi
+    - UseSdif3
+    - CreateSeed
+    - UseCardSpi
   MemoryType              : Application
   SystemMode              : 64MB
   IdealProcessor          : 0
@@ -160,7 +185,9 @@ AccessControlInfo:
     - ndm:u
     - news:s
     - nwm::UDS
+    - ptm:sysm
     - ptm:u
+    - pxi:dev
     - soc:U
     - ssl:C
     - y2r:u
@@ -199,4 +226,4 @@ SystemControlInfo:
     ssl: 0x0004013000002f02
 
 RomFs:
-  RootPath: romfs
+  RootPath: $(APP_ROMFS)
