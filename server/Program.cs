@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Pockettransfer.Server.Auth;
 using Pockettransfer.Server.Data;
 using Pockettransfer.Server.Options;
@@ -45,9 +47,11 @@ builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<SaveSessionStore>();
 builder.Services.AddSingleton<GameCatalog>();
 builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<PkHexService>();
 builder.Services.AddScoped<ConversionRules>();
 builder.Services.AddScoped<BankService>();
+builder.Services.AddScoped<IAuthorizationHandler, AdminAuthorizationHandler>();
 
 var useSecureCookies = !builder.Environment.IsDevelopment();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -55,6 +59,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     {
         o.LoginPath = "/Account/Login";
         o.LogoutPath = "/Account/Logout";
+        o.AccessDeniedPath = "/Account/AccessDenied";
         o.Cookie.Name = "pt_auth";
         o.ExpireTimeSpan = TimeSpan.FromDays(14);
         o.SlidingExpiration = true;
@@ -71,6 +76,12 @@ builder.Services.AddAuthorization(o =>
         p.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme, DeviceTokenHandler.SchemeName);
         p.RequireAuthenticatedUser();
     });
+    o.AddPolicy("Admin", p =>
+    {
+        p.AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme);
+        p.RequireAuthenticatedUser();
+        p.Requirements.Add(new AdminRequirement());
+    });
 });
 
 builder.Services.AddRazorPages(o =>
@@ -78,6 +89,7 @@ builder.Services.AddRazorPages(o =>
     o.Conventions.AuthorizeFolder("/Bank");
     o.Conventions.AuthorizeFolder("/Devices");
     o.Conventions.AuthorizeFolder("/Saves");
+    o.Conventions.AuthorizeFolder("/Admin", "Admin");
 });
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -90,7 +102,8 @@ app.UseForwardedHeaders();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BankDbContext>();
-    await DatabaseBootstrap.InitializeAsync(db);
+    var bankOptions = scope.ServiceProvider.GetRequiredService<IOptions<BankOptions>>();
+    await DatabaseBootstrap.InitializeAsync(db, bankOptions.Value);
 }
 
 if (!app.Environment.IsDevelopment())

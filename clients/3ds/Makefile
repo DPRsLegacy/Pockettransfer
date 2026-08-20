@@ -62,7 +62,7 @@ $(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/g
 	@$(PYTHON) cia/fetch_tools.py
 	@$(PYTHON) cia/gen_assets.py $(BUILD)
 	@$(BANNERTOOL) makebanner -i $(BUILD)/banner.png -a $(BUILD)/banner.wav -o $(BUILD)/banner.bnr
-	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(ICON)" -o $(BUILD)/icon.icn
+	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(ICON)" -f visible -o $(BUILD)/icon.icn
 	@$(STRIP) $(OUTPUT).elf -o $(BUILD)/stripped.elf
 	@$(MAKEROM) -f cia -o $@ -elf $(BUILD)/stripped.elf -rsf cia/app.rsf \
 		-icon $(BUILD)/icon.icn -banner $(BUILD)/banner.bnr -exefslogo -target t \

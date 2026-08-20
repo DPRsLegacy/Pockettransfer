@@ -22,6 +22,7 @@ AccessControlInfo:
   UseExtSaveData          : false
   FileSystemAccess:
     - CategorySystemApplication
+    - CategoryHardwareCheck
     - CategoryFileSystemTool
     - Debug
     - DirectSdmc

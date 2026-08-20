@@ -1,0 +1,90 @@
+@page
+@model Pockettransfer.Server.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Admin";
+}
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h1>Admin</h1>
+        <p class="pt-panel-sub">Users, banks, password resets, and upkeep.</p>
+    </div>
+    @if (Model.Status is not null)
+    {
+        <div class="alert alert-success">@Model.Status</div>
+    }
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    <div class="admin-stat-grid">
+        <a class="admin-stat" asp-page="/Admin/Users/Index">
+            <span class="admin-stat-value">@Model.Stats.Users</span>
+            <span class="admin-stat-label">Users</span>
+        </a>
+        <div class="admin-stat">
+            <span class="admin-stat-value">@Model.Stats.Admins</span>
+            <span class="admin-stat-label">Admins</span>
+        </div>
+        <div class="admin-stat">
+            <span class="admin-stat-value">@Model.Stats.Pokemon</span>
+            <span class="admin-stat-label">Pokémon</span>
+        </div>
+        <div class="admin-stat">
+            <span class="admin-stat-value">@Model.Stats.IllegalPokemon</span>
+            <span class="admin-stat-label">Illegal</span>
+        </div>
+        <div class="admin-stat">
+            <span class="admin-stat-value">@Model.Stats.Devices</span>
+            <span class="admin-stat-label">Devices</span>
+        </div>
+        <div class="admin-stat">
+            <span class="admin-stat-value">@Model.Stats.LivePairingCodes</span>
+            <span class="admin-stat-label">Live codes</span>
+        </div>
+    </div>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Upkeep</h2>
+        <p class="pt-panel-sub">@Model.Stats.ExpiredPairingCodes expired pairing code(s) sitting around.</p>
+    </div>
+    <form method="post" asp-page-handler="Sweep">
+        <button class="btn btn-outline-primary" type="submit">Clear expired pairing codes</button>
+    </form>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+            <h2>Recent accounts</h2>
+            <p class="pt-panel-sub">Newest sign-ups first.</p>
+        </div>
+        <a class="btn btn-primary" asp-page="/Admin/Users/Index">All users</a>
+    </div>
+    @if (Model.RecentUsers.Count == 0)
+    {
+        <p class="text-muted mb-0">No users yet.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="pt-table">
+                <thead><tr><th>User</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var u in Model.RecentUsers)
+                {
+                    <tr>
+                        <td>
+                            <a asp-page="/Admin/Users/Details" asp-route-id="@u.Id">@u.Username</a>
+                            @if (u.IsAdmin) { <span class="admin-badge">admin</span> }
+                        </td>
+                        <td>@u.CreatedAt.UtcDateTime.ToString("u")</td>
+                        <td><a asp-page="/Admin/Users/Bank" asp-route-id="@u.Id">Bank</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

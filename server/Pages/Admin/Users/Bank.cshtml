@@ -1,0 +1,99 @@
+@page "{id:int}"
+@model Pockettransfer.Server.Pages.Admin.Users.BankModel
+@{
+    ViewData["Title"] = $"{Model.Username}'s bank";
+    var active = Model.Boxes.ElementAtOrDefault(Model.ActiveBox);
+}
+<nav class="breadcrumb-nav">
+    <a asp-page="/Admin/Index">Admin</a>
+    <span class="text-muted"> / </span>
+    <a asp-page="/Admin/Users/Details" asp-route-id="@Model.UserId">@Model.Username</a>
+</nav>
+<div class="pt-panel">
+    <div class="bank-header">
+        <div>
+            <h1>@Model.Username’s bank</h1>
+            <p class="bank-stats">@Model.TotalPokemon Pokémon · @Model.Boxes.Count boxes</p>
+        </div>
+        <form class="bank-search" method="get">
+            <input type="search" name="q" value="@Model.Query" placeholder="Search nickname, species, OT…" class="form-control" />
+            @if (Model.Query is null)
+            {
+                <input type="hidden" name="box" value="@Model.ActiveBox" />
+            }
+            <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+    </div>
+
+    @if (Model.Status is not null)
+    {
+        <div class="alert alert-success">@Model.Status</div>
+    }
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+
+    @if (Model.Query is not null)
+    {
+        <section class="search-results">
+            <h2>Results for "@Model.Query"</h2>
+            @if (Model.SearchResults.Count == 0)
+            {
+                <p class="text-muted">No Pokémon matched.</p>
+            }
+            else
+            {
+                <div class="pokemon-list">
+                    @foreach (var p in Model.SearchResults)
+                    {
+                        <a class="pokemon-card @(p.IsLegal ? "legal" : "illegal")" asp-page="/Admin/Pokemon" asp-route-id="@p.Id">
+                            <img class="pokemon-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/@(p.Species).png" alt="" loading="lazy" />
+                            <div class="pokemon-card-body">
+                                <span class="pokemon-card-name @(p.IsShiny ? "shiny" : "")">@p.Nickname</span>
+                                <span class="pokemon-card-meta">@p.SpeciesName · Lv @p.Level · Box @(p.BoxIndex + 1)</span>
+                            </div>
+                        </a>
+                    }
+                </div>
+            }
+            <p class="mt-3 mb-0"><a asp-page="/Admin/Users/Bank" asp-route-id="@Model.UserId" asp-route-box="@Model.ActiveBox">Clear search</a></p>
+        </section>
+    }
+    else if (active is not null)
+    {
+        <div class="box-tabs-wrap">
+            <nav class="box-tabs" aria-label="Bank boxes">
+                @foreach (var b in Model.Boxes)
+                {
+                    <a class="box-tab @(b.Index == Model.ActiveBox ? "active" : "") @(b.Slots.Count > 0 ? "has-mons" : "")"
+                       asp-page="/Admin/Users/Bank" asp-route-id="@Model.UserId" asp-route-box="@b.Index">@b.Name</a>
+                }
+            </nav>
+        </div>
+
+        <section class="bank-box-panel">
+            <h2 class="visually-hidden">@active.Name</h2>
+            <div class="slot-grid">
+                @for (var i = 0; i < 30; i++)
+                {
+                    var slot = active.Slots.FirstOrDefault(s => s.Slot == i);
+                    if (slot is null)
+                    {
+                        <div class="slot empty" aria-label="Empty slot @i"></div>
+                    }
+                    else
+                    {
+                        <a class="slot @(slot.IsLegal ? "legal" : "illegal") @(slot.IsShiny ? "shiny" : "")"
+                           asp-page="/Admin/Pokemon" asp-route-id="@slot.Id"
+                           title="@slot.SpeciesName">
+                            <img class="slot-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/@(slot.Species).png" alt="" loading="lazy" />
+                            <span class="slot-name">@slot.Nickname</span>
+                            <span class="slot-meta">Lv @slot.Level</span>
+                        </a>
+                    }
+                }
+            </div>
+        </section>
+    }
+</div>

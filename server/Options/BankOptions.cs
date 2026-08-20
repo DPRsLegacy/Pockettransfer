@@ -10,4 +10,8 @@ public sealed class BankOptions
     public int SessionMinutes { get; set; } = 20;
     public int MaxSaveBytes { get; set; } = 8_388_608;
     public int PairingMinutes { get; set; } = 10;
+    /// <summary>
+    /// Comma-separated usernames that are always promoted to admin on startup.
+    /// </summary>
+    public string AdminUsernames { get; set; } = "";
 }

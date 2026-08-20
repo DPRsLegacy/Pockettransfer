@@ -35,6 +35,8 @@ Open **`https://bank.saltbox.cc`** (or your NPM URL) in a browser on PC or phone
 2. **Log in** → **My Bank** to browse boxes, search Pokémon, and view PKHeX legality reports.
 3. **Devices** to pair 3DS/Switch · **Saves** to upload a save file from the browser.
 
+The oldest account is an **admin**. Admins see **Admin** in the nav: manage users, inspect boxes, reset passwords, revoke devices. Set `PT_ADMIN_USERNAMES` (comma-separated) to always grant those usernames admin on startup.
+
 ## Console clients
 
 CFW required. Host is always `https://bank.saltbox.cc`. First launch: create an account or log in with the console keyboard — the app stores the device token itself.

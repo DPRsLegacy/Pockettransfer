@@ -42,6 +42,8 @@ POSTGRES_PASSWORD=a-long-random-secret
 BANK_DOMAIN=bank.saltbox.cc
 ```
 
+Optional: `PT_ADMIN_USERNAMES=yourname` so that account is always an admin. If unset, the oldest user becomes admin.
+
 ## 4. Start the stack
 
 From the repo root on the LXC:

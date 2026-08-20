@@ -34,6 +34,8 @@ public sealed class AccountService(
             CreatedAt = DateTimeOffset.UtcNow,
         };
         user.PasswordHash = hasher.HashPassword(user, password);
+        user.IsAdmin = AccountService.ParseAdminUsernames(options.Value.AdminUsernames).Contains(username)
+                       || !await db.Users.AnyAsync(u => u.IsAdmin, ct);
         db.Users.Add(user);
         await db.SaveChangesAsync(ct);
         await EnsureBoxesAsync(user.Id, ct);
@@ -179,4 +181,24 @@ public sealed class AccountService(
         new(ClaimTypes.NameIdentifier, user.Id.ToString()),
         new(ClaimTypes.Name, user.Username),
     ];
+
+    public async Task<bool> IsAdminAsync(ClaimsPrincipal principal, CancellationToken ct)
+    {
+        var raw = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (raw is null || !int.TryParse(raw, out var userId))
+            return false;
+        return await db.Users.AnyAsync(u => u.Id == userId && u.IsAdmin, ct);
+    }
+
+    public static HashSet<string> ParseAdminUsernames(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return [];
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeUsername)
+            .Where(s => s.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    public static bool IsValidUsername(string username) => UsernamePattern.IsMatch(NormalizeUsername(username));
 }

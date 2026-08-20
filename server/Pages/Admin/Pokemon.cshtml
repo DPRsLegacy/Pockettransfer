@@ -1,0 +1,42 @@
+@page "{id:int}"
+@model Pockettransfer.Server.Pages.Admin.PokemonModel
+@{
+    ViewData["Title"] = Model.Pokemon?.Nickname ?? "Pokémon";
+    var p = Model.Pokemon!;
+}
+<nav class="breadcrumb-nav">
+    <a asp-page="/Admin/Users/Bank" asp-route-id="@Model.OwnerId" asp-route-box="@p.BoxIndex">← @Model.OwnerName, Box @(p.BoxIndex + 1)</a>
+</nav>
+@if (Model.Error is not null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+<article class="pokemon-detail @(p.IsLegal ? "legal" : "illegal")">
+    <div class="pokemon-detail-head">
+        <div class="pokemon-detail-sprite-wrap">
+            <img class="pokemon-detail-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/@(p.Species).png" alt="" />
+        </div>
+        <div>
+            <h1 class="@(p.IsShiny ? "shiny" : "")">@p.Nickname</h1>
+            <p class="pokemon-detail-species">@p.SpeciesName @if (p.IsShiny) { <span class="badge shiny-badge">Shiny</span> }</p>
+            <p class="pokemon-detail-level">Level @p.Level · Box @(p.BoxIndex + 1), slot @(p.Slot + 1) · @Model.OwnerName</p>
+            <span class="badge @(p.IsLegal ? "bg-success" : "bg-danger")">@(p.IsLegal ? "Legal" : "Illegal")</span>
+        </div>
+    </div>
+    <dl class="pt-dl detail-grid">
+        <dt>Species</dt><dd>#@p.Species form @p.Form</dd>
+        <dt>OT</dt><dd>@p.OriginalTrainer</dd>
+        <dt>Origin game</dt><dd>@p.OriginVersion</dd>
+        <dt>Format</dt><dd>Gen @p.Format data</dd>
+        <dt>Deposited</dt><dd>@p.DepositedAt.ToLocalTime().ToString("f")</dd>
+        <dt>SHA-256</dt><dd><code class="hash">@p.Sha256</code></dd>
+    </dl>
+    <div class="admin-form-actions mb-4">
+        <a class="btn btn-outline-primary" asp-page-handler="Download" asp-route-id="@p.Id">Download file</a>
+        <form method="post" asp-page-handler="Delete" class="d-inline">
+            <button class="btn btn-outline-danger" type="submit" onclick="return confirm('Delete this Pokémon from the bank?')">Delete from bank</button>
+        </form>
+    </div>
+    <h2>PKHeX legality</h2>
+    <pre class="legality">@p.LegalityReport</pre>
+</article>

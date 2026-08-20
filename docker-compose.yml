@@ -25,6 +25,7 @@ services:
       PT_DETAILED_ERRORS: ${PT_DETAILED_ERRORS:-false}
       ConnectionStrings__Bank: >-
         Host=postgres;Port=5432;Database=${POSTGRES_DB:-pockettransfer};Username=${POSTGRES_USER:-pockettransfer};Password=${POSTGRES_PASSWORD}
+      Bank__AdminUsernames: ${PT_ADMIN_USERNAMES:-}
     ports:
       - "8080:8080"
     volumes:

@@ -6,6 +6,7 @@ public sealed class User
     public required string Username { get; set; }
     public string? Email { get; set; }
     public required string PasswordHash { get; set; }
+    public bool IsAdmin { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public ICollection<Device> Devices { get; set; } = new List<Device>();
     public ICollection<BankBox> Boxes { get; set; } = new List<BankBox>();

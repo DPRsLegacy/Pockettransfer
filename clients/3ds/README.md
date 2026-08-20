@@ -182,3 +182,7 @@ Username: 3–32 characters, lowercase letters, numbers, underscore. Password: 8
 Use **Account** in the main menu to switch users. **Pair from website** remains as a fallback.
 
 TLS notes: [shared/tls.md](../../shared/tls.md).
+
+## 9. Debug log
+
+The app appends to **`sdmc:/pockettransfer.log`** (SD card root). Pull the SD card or use FTPD and open that file after a failure. It records boot, HTTP/TLS errors, and save-mount results. Passwords are not written. If the file grows past 512 KB it is truncated on the next launch.

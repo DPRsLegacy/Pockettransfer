@@ -1,0 +1,184 @@
+@page "{id:int}"
+@model Pockettransfer.Server.Pages.Admin.Users.DetailsModel
+@{
+    ViewData["Title"] = Model.Detail?.User.Username ?? "User";
+    var d = Model.Detail!;
+    var u = d.User;
+    var filled = d.Boxes.Count(b => b.PokemonCount > 0);
+}
+<nav class="breadcrumb-nav">
+    <a asp-page="/Admin/Index">Admin</a>
+    <span class="text-muted"> / </span>
+    <a asp-page="/Admin/Users/Index">Users</a>
+</nav>
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h1>@u.Username @if (u.IsAdmin) { <span class="admin-badge">admin</span> }</h1>
+        <p class="pt-panel-sub">#@u.Id · joined @u.CreatedAt.UtcDateTime.ToString("u") · @d.PokemonCount Pokémon · @filled / @d.Boxes.Count boxes used · @d.Devices.Count device(s)</p>
+    </div>
+    @if (Model.Status is not null)
+    {
+        <div class="alert alert-success">@Model.Status</div>
+    }
+    @if (Model.GeneratedPassword is not null)
+    {
+        <div class="alert alert-success">
+            Temporary password: <code class="hash">@Model.GeneratedPassword</code>
+        </div>
+    }
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    <p class="mb-0">
+        <a class="btn btn-primary" asp-page="/Admin/Users/Bank" asp-route-id="@u.Id">Open bank</a>
+    </p>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Password reset</h2>
+        <p class="pt-panel-sub">Sets a new password. The user can keep an existing browser session until it expires.</p>
+    </div>
+    <form method="post" asp-page-handler="ResetPassword" class="pt-form admin-inline-form">
+        <label class="pt-label">
+            New password
+            <input asp-for="NewPassword" type="password" class="form-control" autocomplete="new-password" minlength="8" required />
+        </label>
+        <div class="admin-form-actions">
+            <button class="btn btn-primary" type="submit">Set password</button>
+        </div>
+    </form>
+    <form method="post" asp-page-handler="GeneratePassword" class="mt-2">
+        <button class="btn btn-outline-primary" type="submit">Generate random password</button>
+    </form>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Username</h2>
+    </div>
+    <form method="post" asp-page-handler="Rename" class="pt-form admin-inline-form">
+        <label class="pt-label">
+            Username
+            <input asp-for="NewUsername" class="form-control" autocomplete="off" autocapitalize="none" spellcheck="false" required pattern="[a-z0-9_]{3,32}" />
+        </label>
+        <div class="admin-form-actions">
+            <button class="btn btn-outline-primary" type="submit">Rename</button>
+        </div>
+    </form>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Admin access</h2>
+        <p class="pt-panel-sub">Admins can open this area and manage every account.</p>
+    </div>
+    @if (u.IsAdmin)
+    {
+        <form method="post" asp-page-handler="SetAdmin">
+            <input type="hidden" name="isAdmin" value="false" />
+            <button class="btn btn-outline-secondary" type="submit">Remove admin</button>
+        </form>
+    }
+    else
+    {
+        <form method="post" asp-page-handler="SetAdmin">
+            <input type="hidden" name="isAdmin" value="true" />
+            <button class="btn btn-outline-primary" type="submit">Make admin</button>
+        </form>
+    }
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Devices</h2>
+        <p class="pt-panel-sub">Revoke a device to drop its console token.</p>
+    </div>
+    @if (d.Devices.Count == 0)
+    {
+        <p class="text-muted mb-0">No paired devices.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="pt-table">
+                <thead><tr><th>Name</th><th>Platform</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var device in d.Devices)
+                {
+                    <tr>
+                        <td>@device.Name</td>
+                        <td>@device.Platform</td>
+                        <td>@device.CreatedAt.UtcDateTime.ToString("u")</td>
+                        <td>@(device.LastUsedAt?.UtcDateTime.ToString("u") ?? "—")</td>
+                        <td>
+                            <form method="post" asp-page-handler="RevokeDevice">
+                                <input type="hidden" name="deviceId" value="@device.Id" />
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Revoke</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+            <h2>Boxes</h2>
+            <p class="pt-panel-sub">Rename a box or repair missing ones.</p>
+        </div>
+        <form method="post" asp-page-handler="RepairBoxes">
+            <button class="btn btn-outline-primary" type="submit">Repair boxes</button>
+        </form>
+    </div>
+    @if (d.Boxes.Count == 0)
+    {
+        <p class="text-muted mb-0">No boxes. Repair to create them.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="pt-table">
+                <thead><tr><th>#</th><th>Name</th><th>Pokémon</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var box in d.Boxes)
+                {
+                    <tr>
+                        <td>@(box.Index + 1)</td>
+                        <td>
+                            <form method="post" asp-page-handler="RenameBox" class="admin-rename-box">
+                                <input type="hidden" name="boxId" value="@box.Id" />
+                                <input class="form-control form-control-sm" name="BoxName" value="@box.Name" maxlength="32" required />
+                                <button class="btn btn-sm btn-outline-primary" type="submit">Save</button>
+                            </form>
+                        </td>
+                        <td>@box.PokemonCount</td>
+                        <td><a asp-page="/Admin/Users/Bank" asp-route-id="@u.Id" asp-route-box="@box.Index">Open</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="pt-panel danger-zone">
+    <div class="pt-panel-header">
+        <h2>Delete account</h2>
+        <p class="pt-panel-sub">Removes the user, devices, boxes, and every Pokémon. This cannot be undone.</p>
+    </div>
+    <form method="post" asp-page-handler="Delete" class="pt-form admin-inline-form">
+        <label class="pt-label">
+            Type @u.Username to confirm
+            <input asp-for="ConfirmUsername" class="form-control" autocomplete="off" autocapitalize="none" spellcheck="false" required />
+        </label>
+        <div class="admin-form-actions">
+            <button class="btn btn-danger" type="submit">Delete user</button>
+        </div>
+    </form>
+</div>

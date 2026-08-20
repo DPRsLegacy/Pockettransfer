@@ -9,6 +9,7 @@
 #include "http.h"
 #include "jsonutil.h"
 #include "lite_check.h"
+#include "log.h"
 
 #define CONFIG_DIR "sdmc:/switch/pockettransfer"
 #define CONFIG_PATH CONFIG_DIR "/config.json"
@@ -93,6 +94,7 @@ static int apply_token(const char *token)
     snprintf(g_cfg.token, sizeof(g_cfg.token), "%s", token);
     pt_http_set_token(g_cfg.token);
     save_config();
+    pt_log("token saved");
     return 0;
 }
 
@@ -356,6 +358,7 @@ static void transfer_flow(void)
     rc = fsdevMountSaveData("save", PT_GAMES[gi].title_id_u64, uid);
     if (R_FAILED(rc)) {
         printf("fsdevMountSaveData failed 0x%x. Fully close the Pokémon game (homebrew overlay / title takeover), then retry.\n", rc);
+        pt_log("save mount fail %s rc=0x%x", PT_GAMES[gi].id, rc);
         wait_a();
         return;
     }
@@ -473,8 +476,16 @@ int main(int argc, char **argv)
     padInitializeDefault(&g_pad);
     socketInitializeDefault();
     romfsInit();
+    pt_log_init("switch");
+    {
+        FILE *ca = fopen("romfs:/cacert.pem", "rb");
+        pt_log("cacert %s", ca ? "ok" : "MISSING");
+        if (ca)
+            fclose(ca);
+    }
     ensure_dirs();
     load_config();
+    pt_log("config token=%s host=%s", g_cfg.token[0] ? "yes" : "no", g_cfg.host);
     pt_http_init("romfs:/cacert.pem");
     if (g_cfg.token[0])
         pt_http_set_token(g_cfg.token);
@@ -502,6 +513,7 @@ int main(int argc, char **argv)
     }
 
 shutdown:
+    pt_log_shutdown();
     pt_http_shutdown();
     romfsExit();
     socketExit();

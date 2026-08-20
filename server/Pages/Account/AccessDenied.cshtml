@@ -1,0 +1,12 @@
+@page
+@model Pockettransfer.Server.Pages.Account.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access denied";
+}
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h1>Access denied</h1>
+        <p class="pt-panel-sub">That page is for admins only.</p>
+    </div>
+    <p class="mb-0"><a asp-page="/Bank/Index">Back to your bank</a></p>
+</div>

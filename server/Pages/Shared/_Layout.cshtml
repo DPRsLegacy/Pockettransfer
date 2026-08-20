@@ -1,5 +1,8 @@
-﻿@{
+﻿@inject AccountService Accounts
+@{
     var path = ViewContext.HttpContext.Request.Path.Value ?? "";
+    var isAdmin = User.Identity?.IsAuthenticated == true
+        && await Accounts.IsAdminAsync(User, ViewContext.HttpContext.RequestAborted);
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -33,6 +36,12 @@
                         <li class="nav-item">
                             <a class="nav-link @(path.StartsWith("/Devices", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Devices/Index">Devices</a>
                         </li>
+                        @if (isAdmin)
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link @(path.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Admin/Index">Admin</a>
+                            </li>
+                        }
                     </ul>
                     <ul class="navbar-nav">
                         @if (User.Identity?.IsAuthenticated == true)

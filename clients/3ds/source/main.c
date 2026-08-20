@@ -1,5 +1,6 @@
 #include <3ds.h>
 #include <curl/curl.h>
+#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "http.h"
 #include "jsonutil.h"
 #include "lite_check.h"
+#include "log.h"
 
 #define CONFIG_DIR "sdmc:/3ds/pockettransfer"
 #define CONFIG_PATH CONFIG_DIR "/config.json"
@@ -22,7 +24,17 @@ typedef struct {
 } Config;
 
 static Config g_cfg;
-static PrintConsole top, bottom;
+static PrintConsole bottom;
+static u32 *g_soc = NULL;
+static int g_have_soc;
+static int g_have_ac;
+static int g_have_am;
+
+#define SOC_ALIGN 0x1000
+#define SOC_BUFFERSIZE 0x100000
+
+static void wait_a(void);
+static int pick_items(const char *title, const char **items, int count);
 
 static void ensure_dirs(void)
 {
@@ -71,14 +83,88 @@ static void save_config(void)
     fclose(f);
 }
 
+static void present(void)
+{
+    gfxFlushBuffers();
+    gfxSwapBuffers();
+    gspWaitForVBlank();
+}
+
+static void init_video(void)
+{
+    /* consoleInit switches the screen to RGB565 and turns double buffering
+       off. Only use the bottom screen; two consoles + custom swap was
+       presenting an empty buffer (solid black). */
+    consoleInit(GFX_BOTTOM, &bottom);
+    consoleSelect(&bottom);
+}
+
+static int init_net(void)
+{
+    Result rc;
+    u32 wifi = 0;
+    int i;
+
+    g_soc = memalign(SOC_ALIGN, SOC_BUFFERSIZE);
+    if (!g_soc) {
+        pt_log("soc memalign fail");
+        return -1;
+    }
+    rc = socInit(g_soc, SOC_BUFFERSIZE);
+    pt_log("socInit 0x%08lx", (unsigned long)rc);
+    if (R_FAILED(rc)) {
+        free(g_soc);
+        g_soc = NULL;
+        return -1;
+    }
+    g_have_soc = 1;
+
+    rc = acInit();
+    pt_log("acInit 0x%08lx", (unsigned long)rc);
+    if (R_SUCCEEDED(rc))
+        g_have_ac = 1;
+    for (i = 0; i < 80; i++) {
+        wifi = 0;
+        if (R_SUCCEEDED(ACU_GetWifiStatus(&wifi)) && wifi) {
+            pt_log("wifi status=%lu", (unsigned long)wifi);
+            return 0;
+        }
+        svcSleepThread(100000000LL);
+    }
+    pt_log("wifi not ready status=%lu (continuing)", (unsigned long)wifi);
+    return 0;
+}
+
+static void log_3ds_clock(void)
+{
+    u64 ms = osGetTime();
+    u64 sec = ms / 1000ULL;
+    /* osGetTime is ms since 1900-01-01; Unix epoch is 2208988800s later. */
+    u64 unix_sec = (sec > 2208988800ULL) ? (sec - 2208988800ULL) : 0;
+    int year = 1970;
+    u64 days = unix_sec / 86400ULL;
+    while (days >= 365ULL) {
+        int leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+        u64 ylen = leap ? 366ULL : 365ULL;
+        if (days < ylen)
+            break;
+        days -= ylen;
+        year++;
+        if (year > 2100)
+            break;
+    }
+    pt_log("clock unix=%llu approx_year=%d", (unsigned long long)unix_sec, year);
+}
+
 static void wait_a(void)
 {
     printf("Press A to continue.\n");
+    present();
     while (aptMainLoop()) {
         hidScanInput();
         if (hidKeysDown() & KEY_A)
             break;
-        gspWaitForVBlank();
+        present();
     }
 }
 
@@ -90,23 +176,122 @@ static int url_join(char *out, size_t n, const char *path)
     return snprintf(out, n, "%s%s", g_cfg.host, path);
 }
 
-static Result open_save(u64 title, FS_Archive *arch)
+static Result open_save_media(u64 title, FS_MediaType media, FS_Archive *arch)
 {
-    u32 path_sd[3] = {MEDIATYPE_SD, (u32)title, (u32)(title >> 32)};
-    u32 path_card[3] = {MEDIATYPE_GAME_CARD, (u32)title, (u32)(title >> 32)};
+    u32 path[3] = { media, (u32)title, (u32)(title >> 32) };
     Result rc = FSUSER_OpenArchive(arch, ARCHIVE_USER_SAVEDATA,
-                                   (FS_Path){PATH_BINARY, sizeof(path_sd), path_sd});
+                                   (FS_Path){ PATH_BINARY, sizeof(path), path });
+    pt_log("save open tid=%016llx media=%u user=0x%08lx",
+           (unsigned long long)title, (unsigned)media, (unsigned long)rc);
     if (R_SUCCEEDED(rc))
         return rc;
-    return FSUSER_OpenArchive(arch, ARCHIVE_USER_SAVEDATA,
-                              (FS_Path){PATH_BINARY, sizeof(path_card), path_card});
+    if (media != MEDIATYPE_GAME_CARD)
+        return rc;
+    rc = FSUSER_OpenArchive(arch, ARCHIVE_GAMECARD_SAVEDATA, fsMakePath(PATH_EMPTY, ""));
+    pt_log("save open cart-generic=0x%08lx", (unsigned long)rc);
+    return rc;
+}
+
+static int probe_save(u64 title, FS_MediaType media)
+{
+    FS_Archive arch;
+    Result rc = open_save_media(title, media, &arch);
+    if (R_FAILED(rc))
+        return 0;
+    FSUSER_CloseArchive(arch);
+    return 1;
+}
+
+static u64 cart_title_id(void)
+{
+    u32 count = 0, nread = 0, i, j;
+    u64 tids[8];
+    bool inserted = false;
+    Result rc = FSUSER_CardSlotIsInserted(&inserted);
+    pt_log("cart slot rc=0x%08lx inserted=%d", (unsigned long)rc, inserted ? 1 : 0);
+    if (R_SUCCEEDED(rc) && !inserted)
+        return 0;
+    memset(tids, 0, sizeof(tids));
+    rc = AM_GetTitleCount(MEDIATYPE_GAME_CARD, &count);
+    pt_log("cart titlecount rc=0x%08lx n=%lu", (unsigned long)rc, (unsigned long)count);
+    if (R_FAILED(rc) || count == 0)
+        return 0;
+    if (count > 8)
+        count = 8;
+    rc = AM_GetTitleList(&nread, MEDIATYPE_GAME_CARD, count, tids);
+    pt_log("cart list rc=0x%08lx nread=%lu", (unsigned long)rc, (unsigned long)nread);
+    if (R_FAILED(rc) || nread == 0)
+        return 0;
+    for (i = 0; i < nread; i++) {
+        pt_log("cart tid[%lu]=%016llx", (unsigned long)i, (unsigned long long)tids[i]);
+        for (j = 0; j < (u32)PT_GAME_COUNT; j++) {
+            if (PT_GAMES[j].title_id_u64 == tids[i])
+                return tids[i];
+        }
+    }
+    return tids[0];
+}
+
+static const char *game_name_for_tid(u64 tid)
+{
+    int i;
+    for (i = 0; i < PT_GAME_COUNT; i++) {
+        if (PT_GAMES[i].title_id_u64 == tid)
+            return PT_GAMES[i].name;
+    }
+    return NULL;
+}
+
+static int select_save_media(int gi, FS_MediaType *out)
+{
+    u64 want = PT_GAMES[gi].title_id_u64;
+    u64 cart = cart_title_id();
+    const char *cname = game_name_for_tid(cart);
+    const char *items[2];
+    FS_MediaType map[2];
+    int n = 0, choice;
+    int sd_ok = probe_save(want, MEDIATYPE_SD);
+    int cart_ok = (cart == want);
+
+    if (sd_ok) {
+        items[n] = "SD card (installed title)";
+        map[n++] = MEDIATYPE_SD;
+    }
+    if (cart_ok) {
+        items[n] = "Game cart";
+        map[n++] = MEDIATYPE_GAME_CARD;
+    }
+
+    if (n == 0) {
+        consoleSelect(&bottom);
+        consoleClear();
+        printf("No save for %s.\n", PT_GAMES[gi].name);
+        if (cart && cart != want)
+            printf("Game cart is %s.\n", cname ? cname : "another title");
+        else if (!cart)
+            printf("No game cart detected.\n");
+        printf("Install the game on SD or insert the cart,\nthen save once in-game.\n");
+        wait_a();
+        return -1;
+    }
+    if (n == 1) {
+        *out = map[0];
+        printf("Using %s from %s.\n", PT_GAMES[gi].name,
+               map[0] == MEDIATYPE_GAME_CARD ? "game cart" : "SD");
+        return 0;
+    }
+    choice = pick_items("Load save from", items, n);
+    if (choice < 0)
+        return -1;
+    *out = map[choice];
+    return 0;
 }
 
 static int read_save_file(FS_Archive arch, const char *name, uint8_t **out, u64 *out_size)
 {
     Handle h;
     Result rc = FSUSER_OpenFile(&h, arch, fsMakePath(PATH_ASCII, name), FS_OPEN_READ, 0);
-    u32 read = 0;
+    u32 got = 0;
     if (R_FAILED(rc))
         return -1;
     FSFILE_GetSize(h, out_size);
@@ -115,23 +300,74 @@ static int read_save_file(FS_Archive arch, const char *name, uint8_t **out, u64 
         FSFILE_Close(h);
         return -1;
     }
-    rc = FSFILE_Read(h, &read, 0, *out, (u32)*out_size);
+    while (got < (u32)*out_size) {
+        u32 chunk = 0;
+        u32 want = (u32)*out_size - got;
+        if (want > 0x1000)
+            want = 0x1000;
+        rc = FSFILE_Read(h, &chunk, got, *out + got, want);
+        if (R_FAILED(rc) || chunk == 0)
+            break;
+        got += chunk;
+    }
     FSFILE_Close(h);
-    return R_FAILED(rc) ? -1 : 0;
+    pt_log("save read rc=0x%08lx got=%lu/%lu", (unsigned long)rc,
+           (unsigned long)got, (unsigned long)*out_size);
+    if (R_FAILED(rc) || got != (u32)*out_size) {
+        free(*out);
+        *out = NULL;
+        return -1;
+    }
+    return 0;
 }
 
-static int write_save_file(FS_Archive arch, const char *name, const uint8_t *data, u64 size)
+/* PKSM: delete NAND anti-savegame-restore value or the game hangs on the 3DS logo.
+   packed as ((SECUREVALUE_SLOT_SD << 32) | (lowId & 0xFFFFFF00)). */
+static Result delete_secure_value(u64 title)
+{
+    u8 existed = 0;
+    u64 in = ((u64)SECUREVALUE_SLOT_SD << 32) | ((u32)title & 0xFFFFFF00u);
+    Result rc = FSUSER_ControlSecureSave(SECURESAVE_ACTION_DELETE, &in, sizeof(in), &existed, 1);
+    pt_log("secure value delete 0x%08lx existed=%u tid=%016llx",
+           (unsigned long)rc, (unsigned)existed, (unsigned long long)title);
+    return rc;
+}
+
+static int write_save_file(FS_Archive arch, const char *name, const uint8_t *data, u64 size,
+                           u64 title)
 {
     Handle h;
-    u32 written = 0;
-    Result rc = FSUSER_OpenFile(&h, arch, fsMakePath(PATH_ASCII, name),
-                                FS_OPEN_WRITE | FS_OPEN_CREATE, 0);
+    u32 got = 0;
+    Result rc = FSUSER_OpenFile(&h, arch, fsMakePath(PATH_ASCII, name), FS_OPEN_WRITE, 0);
+    if (R_FAILED(rc)) {
+        pt_log("save write open 0x%08lx", (unsigned long)rc);
+        return -1;
+    }
+    while (got < (u32)size) {
+        u32 chunk = 0;
+        u32 want = (u32)size - got;
+        if (want > 0x1000)
+            want = 0x1000;
+        rc = FSFILE_Write(h, &chunk, got, data + got, want, FS_WRITE_FLUSH);
+        if (R_FAILED(rc) || chunk == 0)
+            break;
+        got += chunk;
+    }
+    pt_log("save write rc=0x%08lx wrote=%lu/%lu", (unsigned long)rc, (unsigned long)got,
+           (unsigned long)size);
+    if (R_FAILED(rc) || got != (u32)size) {
+        FSFILE_Close(h);
+        return -1;
+    }
+    rc = FSUSER_ControlArchive(arch, ARCHIVE_ACTION_COMMIT_SAVE_DATA, NULL, 0, NULL, 0);
+    pt_log("save commit 0x%08lx", (unsigned long)rc);
+    FSFILE_Close(h);
     if (R_FAILED(rc))
         return -1;
-    FSFILE_SetSize(h, size);
-    rc = FSFILE_Write(h, &written, 0, data, (u32)size, FS_WRITE_FLUSH);
-    FSFILE_Close(h);
-    return R_FAILED(rc) ? -1 : 0;
+    rc = delete_secure_value(title);
+    if (R_FAILED(rc))
+        printf("Anti-restore clear failed (0x%08lx).\n", (unsigned long)rc);
+    return 0;
 }
 
 static void backup_bytes(const char *id, const uint8_t *data, u64 size)
@@ -154,6 +390,7 @@ static int apply_token(const char *token)
     snprintf(g_cfg.token, sizeof(g_cfg.token), "%s", token);
     pt_http_set_token(g_cfg.token);
     save_config();
+    pt_log("token saved");
     return 0;
 }
 
@@ -216,8 +453,7 @@ static int pair_with_code_file(void)
 
 static void restore_consoles(void)
 {
-    consoleInit(GFX_TOP, &top);
-    consoleInit(GFX_BOTTOM, &bottom);
+    init_video();
 }
 
 static int prompt_text(const char *hint, char *out, size_t n, int password, int max_len)
@@ -239,15 +475,18 @@ static int prompt_text(const char *hint, char *out, size_t n, int password, int 
 
 static int pick_items(const char *title, const char **items, int count)
 {
-    int sel = 0, i;
+    int sel = 0, i, drawn = -1;
     while (aptMainLoop()) {
         hidScanInput();
         u32 k = hidKeysDown();
-        consoleSelect(&top);
-        consoleClear();
-        printf("%s\n\n", title);
-        for (i = 0; i < count; i++)
-            printf("%c %s\n", i == sel ? '>' : ' ', items[i]);
+        if (sel != drawn) {
+            consoleSelect(&bottom);
+            consoleClear();
+            printf("%s\n\n", title);
+            for (i = 0; i < count; i++)
+                printf("%c %s\n", i == sel ? '>' : ' ', items[i]);
+            drawn = sel;
+        }
         if (k & KEY_DUP)
             sel = (sel + count - 1) % count;
         if (k & KEY_DDOWN)
@@ -256,9 +495,7 @@ static int pick_items(const char *title, const char **items, int count)
             return -1;
         if (k & KEY_A)
             return sel;
-        gfxFlushBuffers();
-        gfxSwapBuffers();
-        gspWaitForVBlank();
+        present();
     }
     return -1;
 }
@@ -305,7 +542,9 @@ static int auth_request(int is_register)
     consoleClear();
     printf("%s...\n", is_register ? "Creating account" : "Logging in");
     if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0) {
-        printf("HTTP error talking to %s\n", PT_HOST);
+        printf("HTTP/TLS error talking to %s\n", PT_HOST);
+        printf("If the log says BADCERT_FUTURE, set the 3DS\ndate in System Settings to today.\n");
+        printf("See sdmc:/pockettransfer.log\n");
         http_buffer_free(&resp);
         return -1;
     }
@@ -329,6 +568,7 @@ static int account_flow(void)
     int choice;
     while (aptMainLoop()) {
         choice = pick_items("Pockettransfer account\nHost: " PT_HOST, items, 4);
+        pt_log("account menu choice=%d", choice);
         if (choice < 0 || choice == 3)
             return g_cfg.token[0] ? 0 : -1;
         consoleSelect(&bottom);
@@ -354,7 +594,7 @@ static int account_flow(void)
 
 static int select_game(int platform_3ds)
 {
-    int i, sel = 0, count = 0;
+    int i, sel = 0, count = 0, drawn = -1;
     int idx[PT_GAME_COUNT];
     for (i = 0; i < PT_GAME_COUNT; i++) {
         if ((platform_3ds && strcmp(PT_GAMES[i].platform, "3ds") == 0) ||
@@ -364,11 +604,14 @@ static int select_game(int platform_3ds)
     while (aptMainLoop()) {
         hidScanInput();
         u32 k = hidKeysDown();
-        consoleSelect(&top);
-        consoleClear();
-        printf("Select game (D-Pad, A confirm, B back)\n\n");
-        for (i = 0; i < count; i++)
-            printf("%c %s\n", i == sel ? '>' : ' ', PT_GAMES[idx[i]].name);
+        if (sel != drawn) {
+            consoleSelect(&bottom);
+            consoleClear();
+            printf("Select game (D-Pad, A confirm, B back)\n\n");
+            for (i = 0; i < count; i++)
+                printf("%c %s\n", i == sel ? '>' : ' ', PT_GAMES[idx[i]].name);
+            drawn = sel;
+        }
         if (k & KEY_DUP)
             sel = (sel + count - 1) % count;
         if (k & KEY_DDOWN)
@@ -377,7 +620,7 @@ static int select_game(int platform_3ds)
             return -1;
         if (k & KEY_A)
             return idx[sel];
-        gspWaitForVBlank();
+        present();
     }
     return -1;
 }
@@ -386,9 +629,10 @@ static void transfer_flow(void)
 {
     int gi = select_game(1);
     FS_Archive arch;
+    FS_MediaType media;
     uint8_t *save = NULL;
     u64 save_size = 0;
-    char url[400], session[80], err[256];
+    char url[400], session[80], err[256], save_path[32];
     HttpBuffer resp = {0};
     long status = 0;
     int box = 0, slot = 0, pokemon_id = 0;
@@ -397,16 +641,21 @@ static void transfer_flow(void)
 
     if (gi < 0)
         return;
+    if (select_save_media(gi, &media) != 0)
+        return;
+    snprintf(save_path, sizeof(save_path), "/%s", PT_GAMES[gi].primary_save);
     consoleSelect(&bottom);
     consoleClear();
-    printf("Opening %s...\n", PT_GAMES[gi].name);
-    if (R_FAILED(open_save(PT_GAMES[gi].title_id_u64, &arch))) {
-        printf("Could not mount save. Is the title installed?\n");
+    printf("Opening %s (%s)...\n", PT_GAMES[gi].name,
+           media == MEDIATYPE_GAME_CARD ? "game cart" : "SD");
+    if (R_FAILED(open_save_media(PT_GAMES[gi].title_id_u64, media, &arch))) {
+        printf("Could not mount save.\nInsert the cart or install the title,\nthen save once in-game.\n");
+        pt_log("save mount fail %s media=%u", PT_GAMES[gi].id, (unsigned)media);
         wait_a();
         return;
     }
-    if (read_save_file(arch, "/main", &save, &save_size) != 0) {
-        printf("Failed to read /main\n");
+    if (read_save_file(arch, save_path, &save, &save_size) != 0) {
+        printf("Failed to read %s\n", save_path);
         FSUSER_CloseArchive(arch);
         wait_a();
         return;
@@ -496,8 +745,10 @@ static void transfer_flow(void)
             break;
         }
         if (hidKeysDown() & KEY_A) {
-            if (write_save_file(arch, "/main", patched, resp.len) == 0)
-                printf("Save written. Close the game if it was open next time.\n");
+            if (write_save_file(arch, save_path, patched, resp.len,
+                                PT_GAMES[gi].title_id_u64) == 0)
+                printf("Save written to %s. Close the game if it was open.\n",
+                       media == MEDIATYPE_GAME_CARD ? "game cart" : "SD");
             else
                 printf("Write failed.\n");
             break;
@@ -512,15 +763,31 @@ static void transfer_flow(void)
 
 int main(int argc, char **argv)
 {
-    int sel = 0;
+    int sel = 0, drawn = -1;
     gfxInitDefault();
-    consoleInit(GFX_TOP, &top);
-    consoleInit(GFX_BOTTOM, &bottom);
+    init_video();
     fsInit();
     aptInit();
+    g_have_am = R_SUCCEEDED(amInit());
     romfsInit();
+    pt_log_init("3ds");
+    pt_log("amInit %s", g_have_am ? "ok" : "fail");
+    log_3ds_clock();
+    {
+        FILE *ca = fopen("romfs:/cacert.pem", "rb");
+        pt_log("cacert %s", ca ? "ok" : "MISSING");
+        if (ca)
+            fclose(ca);
+    }
+    if (init_net() != 0) {
+        consoleSelect(&bottom);
+        consoleClear();
+        printf("Wi-Fi/socket init failed.\nCheck 3DS internet settings.\nSee sdmc:/pockettransfer.log\n");
+        wait_a();
+    }
     ensure_dirs();
     load_config();
+    pt_log("config token=%s host=%s", g_cfg.token[0] ? "yes" : "no", g_cfg.host);
     pt_http_init("romfs:/cacert.pem");
     if (g_cfg.token[0])
         pt_http_set_token(g_cfg.token);
@@ -530,30 +797,46 @@ int main(int argc, char **argv)
     while (aptMainLoop()) {
         hidScanInput();
         u32 k = hidKeysDown();
-        consoleSelect(&top);
-        consoleClear();
-        printf("Pockettransfer (3DS)\nHost: %s\nToken: %s\n\n", g_cfg.host,
-               g_cfg.token[0] ? "(saved)" : "(none)");
-        printf("%c Deposit/withdraw\n%c Account\n%c Quit\n",
-               sel == 0 ? '>' : ' ', sel == 1 ? '>' : ' ', sel == 2 ? '>' : ' ');
+        if (sel != drawn) {
+            consoleSelect(&bottom);
+            consoleClear();
+            printf("Pockettransfer (3DS)\nHost: %s\nToken: %s\n\n", g_cfg.host,
+                   g_cfg.token[0] ? "(saved)" : "(none)");
+            printf("%c Deposit/withdraw\n%c Account\n%c Quit\n",
+                   sel == 0 ? '>' : ' ', sel == 1 ? '>' : ' ', sel == 2 ? '>' : ' ');
+            drawn = sel;
+        }
         if (k & KEY_DUP)
             sel = (sel + 2) % 3;
         if (k & KEY_DDOWN)
             sel = (sel + 1) % 3;
         if (k & KEY_START || (k & KEY_A && sel == 2))
             break;
-        if (k & KEY_A && sel == 0)
+        if (k & KEY_A && sel == 0) {
             transfer_flow();
-        if (k & KEY_A && sel == 1)
+            drawn = -1;
+        }
+        if (k & KEY_A && sel == 1) {
             account_flow();
-        gfxFlushBuffers();
-        gfxSwapBuffers();
-        gspWaitForVBlank();
+            drawn = -1;
+        }
+        present();
     }
 
 shutdown:
+    pt_log_shutdown();
     pt_http_shutdown();
+    if (g_have_soc)
+        socExit();
+    if (g_have_ac)
+        acExit();
+    if (g_soc) {
+        free(g_soc);
+        g_soc = NULL;
+    }
     romfsExit();
+    if (g_have_am)
+        amExit();
     fsExit();
     aptExit();
     gfxExit();
