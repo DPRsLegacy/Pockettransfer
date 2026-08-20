@@ -105,9 +105,10 @@ public sealed class ApiController(
 
     [Authorize(Policy = "AnyUser")]
     [HttpGet("bank/boxes")]
-    public async Task<ActionResult> GetBank(CancellationToken ct)
+    public async Task<ActionResult> GetBank([FromQuery] Guid? sessionId, CancellationToken ct)
     {
-        var boxes = await bank.GetBoxesAsync(CurrentUserId(), ct);
+        await bank.ReconcileOrphansAsync(sessions.ActiveIds(), ct);
+        var boxes = await bank.GetBoxesAsync(CurrentUserId(), ct, sessionId);
         return Ok(boxes.Select(b => new
         {
             b.Id,
@@ -134,6 +135,7 @@ public sealed class ApiController(
         if (sav is null)
             return BadRequest(new { error = "PKHeX could not read this save file." });
 
+        await bank.ReconcileOrphansAsync(sessions.ActiveIds(), ct);
         var session = sessions.Create(CurrentUserId(), sav, file.FileName, TimeSpan.FromMinutes(options.Value.SessionMinutes));
         return Ok(SessionSummary(session));
     }
@@ -199,9 +201,26 @@ public sealed class ApiController(
     }
 
     [Authorize(Policy = "AnyUser")]
-    [HttpDelete("saves/{id:guid}")]
-    public ActionResult CloseSession(Guid id)
+    [HttpPost("saves/{id:guid}/commit")]
+    public async Task<ActionResult> CommitSession(Guid id, CancellationToken ct)
     {
+        try
+        {
+            await bank.CommitSessionAsync(CurrentUserId(), id, ct);
+            sessions.Remove(id);
+            return Ok(new { ok = true, sessionId = id });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [Authorize(Policy = "AnyUser")]
+    [HttpDelete("saves/{id:guid}")]
+    public async Task<ActionResult> CloseSession(Guid id, CancellationToken ct)
+    {
+        await bank.AbandonSessionAsync(CurrentUserId(), id, ct);
         sessions.Remove(id);
         return NoContent();
     }
@@ -215,7 +234,8 @@ public sealed class ApiController(
             return NotFound(new { error = "Save session expired or missing." });
         try
         {
-            var stored = await bank.DepositAsync(CurrentUserId(), session.Save, body.Box, body.Slot, body.BankBox, body.BankSlot, ct);
+            var stored = await bank.DepositAsync(
+                CurrentUserId(), session.Id, session.Save, body.Box, body.Slot, body.BankBox, body.BankSlot, ct);
             sessions.Touch(session, TimeSpan.FromMinutes(options.Value.SessionMinutes));
             var destBox = await db.BankBoxes.AsNoTracking().FirstAsync(b => b.Id == stored.BankBoxId, ct);
             return Ok(bank.ToDto(stored, pkhex, destBox.Index));
@@ -235,7 +255,7 @@ public sealed class ApiController(
             return NotFound(new { error = "Save session expired or missing." });
         try
         {
-            await bank.WithdrawAsync(CurrentUserId(), session.Save, body.PokemonId, body.Box, body.Slot, ct);
+            await bank.WithdrawAsync(CurrentUserId(), session.Id, session.Save, body.PokemonId, body.Box, body.Slot, ct);
             sessions.Touch(session, TimeSpan.FromMinutes(options.Value.SessionMinutes));
             return Ok(new { ok = true, sessionId = session.Id });
         }

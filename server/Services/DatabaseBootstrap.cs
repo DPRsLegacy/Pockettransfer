@@ -10,6 +10,7 @@ public static class DatabaseBootstrap
     {
         await db.Database.EnsureCreatedAsync(ct);
         await PatchUsersTableAsync(db, ct);
+        await PatchBankPokemonHoldsAsync(db, ct);
         await BackfillUsernamesAsync(db, ct);
         await EnsureUsernameIndexAsync(db, ct);
         await SeedAdminsAsync(db, options, ct);
@@ -55,6 +56,42 @@ public static class DatabaseBootstrap
             {
                 await db.Database.ExecuteSqlRawAsync(
                     "ALTER TABLE Users ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0;", ct);
+            }
+            catch
+            {
+                // column already exists
+            }
+        }
+    }
+
+    private static async Task PatchBankPokemonHoldsAsync(BankDbContext db, CancellationToken ct)
+    {
+        if (db.Database.IsNpgsql())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                ALTER TABLE "BankPokemon" ADD COLUMN IF NOT EXISTS "Committed" boolean NOT NULL DEFAULT TRUE;
+                ALTER TABLE "BankPokemon" ADD COLUMN IF NOT EXISTS "HeldBySessionId" uuid;
+                """, ct);
+            return;
+        }
+
+        if (db.Database.IsSqlite())
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE BankPokemon ADD COLUMN Committed INTEGER NOT NULL DEFAULT 1;", ct);
+            }
+            catch
+            {
+                // column already exists
+            }
+
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE BankPokemon ADD COLUMN HeldBySessionId TEXT NULL;", ct);
             }
             catch
             {

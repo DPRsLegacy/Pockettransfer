@@ -337,6 +337,7 @@ static void transfer_flow(void)
     long status = 0;
     int box = 0, slot = 0, pokemon_id = 0;
     FILE *sf;
+    int wrote = 0;
 
     if (gi < 0)
         return;
@@ -431,8 +432,11 @@ static void transfer_flow(void)
     snprintf(url, sizeof(url), "%s/api/saves/%s/file", g_cfg.host, session);
     if (pt_http_request("GET", url, NULL, NULL, &resp, &status) != 0 || status != 200 || !resp.data) {
         printf("Patched save download failed\n");
-        free(save);
         http_buffer_free(&resp);
+        snprintf(url, sizeof(url), "%s/api/saves/%s", g_cfg.host, session);
+        pt_http_request("DELETE", url, NULL, NULL, &resp, &status);
+        http_buffer_free(&resp);
+        free(save);
         fsdevUnmountDevice("save");
         wait_a();
         return;
@@ -458,12 +462,30 @@ static void transfer_flow(void)
             fclose(out);
             rc = fsdevCommitDevice("save");
             printf("Commit result 0x%x\n", rc);
+            wrote = R_SUCCEEDED(rc);
             break;
         }
     }
 
-    free(save);
     http_buffer_free(&resp);
+    resp.data = NULL;
+    resp.len = 0;
+    if (wrote) {
+        snprintf(url, sizeof(url), "%s/api/saves/%s/commit", g_cfg.host, session);
+        if (pt_http_request("POST", url, "{}", "application/json", &resp, &status) != 0 ||
+            status != 200)
+            printf("Bank finalize failed (%ld). Pokemon were kept on the server.\n", status);
+        else
+            printf("Bank updated.\n");
+        http_buffer_free(&resp);
+    } else {
+        snprintf(url, sizeof(url), "%s/api/saves/%s", g_cfg.host, session);
+        pt_http_request("DELETE", url, NULL, NULL, &resp, &status);
+        http_buffer_free(&resp);
+        printf("Write skipped. Bank copies were kept.\n");
+    }
+
+    free(save);
     fsdevUnmountDevice("save");
     wait_a();
 }

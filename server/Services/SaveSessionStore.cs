@@ -35,6 +35,24 @@ public sealed class SaveSessionStore
         return session;
     }
 
+    public bool Exists(Guid id)
+    {
+        lock (_gate)
+        {
+            Sweep();
+            return _sessions.ContainsKey(id);
+        }
+    }
+
+    public HashSet<Guid> ActiveIds()
+    {
+        lock (_gate)
+        {
+            Sweep();
+            return _sessions.Keys.ToHashSet();
+        }
+    }
+
     public SaveSession? Get(Guid id, int userId)
     {
         lock (_gate)

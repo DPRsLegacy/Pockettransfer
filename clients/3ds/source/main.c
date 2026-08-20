@@ -7,11 +7,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "boxes.h"
 #include "games.h"
 #include "http.h"
 #include "jsonutil.h"
 #include "lite_check.h"
 #include "log.h"
+#include "ui.h"
 
 #define CONFIG_DIR "sdmc:/3ds/pockettransfer"
 #define CONFIG_PATH CONFIG_DIR "/config.json"
@@ -24,7 +26,6 @@ typedef struct {
 } Config;
 
 static Config g_cfg;
-static PrintConsole bottom;
 static u32 *g_soc = NULL;
 static int g_have_soc;
 static int g_have_ac;
@@ -33,8 +34,11 @@ static int g_have_am;
 #define SOC_ALIGN 0x1000
 #define SOC_BUFFERSIZE 0x100000
 
-static void wait_a(void);
-static int pick_items(const char *title, const char **items, int count);
+static void refresh_chrome(const char *status)
+{
+    ui_set_chrome("bank.saltbox.cc", g_cfg.token[0] ? "Signed in" : "Not signed in",
+                  status ? status : "Ready");
+}
 
 static void ensure_dirs(void)
 {
@@ -81,22 +85,6 @@ static void save_config(void)
         return;
     fprintf(f, "{\"host\":\"%s\",\"token\":\"%s\"}\n", g_cfg.host, g_cfg.token);
     fclose(f);
-}
-
-static void present(void)
-{
-    gfxFlushBuffers();
-    gfxSwapBuffers();
-    gspWaitForVBlank();
-}
-
-static void init_video(void)
-{
-    /* consoleInit switches the screen to RGB565 and turns double buffering
-       off. Only use the bottom screen; two consoles + custom swap was
-       presenting an empty buffer (solid black). */
-    consoleInit(GFX_BOTTOM, &bottom);
-    consoleSelect(&bottom);
 }
 
 static int init_net(void)
@@ -154,18 +142,6 @@ static void log_3ds_clock(void)
             break;
     }
     pt_log("clock unix=%llu approx_year=%d", (unsigned long long)unix_sec, year);
-}
-
-static void wait_a(void)
-{
-    printf("Press A to continue.\n");
-    present();
-    while (aptMainLoop()) {
-        hidScanInput();
-        if (hidKeysDown() & KEY_A)
-            break;
-        present();
-    }
 }
 
 static int url_join(char *out, size_t n, const char *path)
@@ -263,24 +239,23 @@ static int select_save_media(int gi, FS_MediaType *out)
     }
 
     if (n == 0) {
-        consoleSelect(&bottom);
-        consoleClear();
-        printf("No save for %s.\n", PT_GAMES[gi].name);
+        char msg[256];
         if (cart && cart != want)
-            printf("Game cart is %s.\n", cname ? cname : "another title");
-        else if (!cart)
-            printf("No game cart detected.\n");
-        printf("Install the game on SD or insert the cart,\nthen save once in-game.\n");
-        wait_a();
+            snprintf(msg, sizeof(msg),
+                     "No save for %s.\nGame cart is %s.\nInstall the game or insert the matching cart, then save once in-game.",
+                     PT_GAMES[gi].name, cname ? cname : "another title");
+        else
+            snprintf(msg, sizeof(msg),
+                     "No save for %s.\nInstall the game on SD or insert the cart, then save once in-game.",
+                     PT_GAMES[gi].name);
+        ui_alert("No save found", msg);
         return -1;
     }
     if (n == 1) {
         *out = map[0];
-        printf("Using %s from %s.\n", PT_GAMES[gi].name,
-               map[0] == MEDIATYPE_GAME_CARD ? "game cart" : "SD");
         return 0;
     }
-    choice = pick_items("Load save from", items, n);
+    choice = ui_pick("Load save from", items, n);
     if (choice < 0)
         return -1;
     *out = map[choice];
@@ -404,7 +379,7 @@ static int write_save_file(FS_Archive arch, const char *name, const uint8_t *dat
         return -1;
     rc = delete_secure_value(title);
     if (R_FAILED(rc))
-        printf("Anti-restore clear failed (0x%08lx).\n", (unsigned long)rc);
+        pt_log("anti-restore clear failed 0x%08lx", (unsigned long)rc);
     return 0;
 }
 
@@ -440,18 +415,17 @@ static int enroll_device(void)
     url_join(url, sizeof(url), "/api/auth/devices/enroll");
     if (pt_http_request("POST", url, "{\"name\":\"3DS\",\"platform\":\"3ds\"}",
                         "application/json", &resp, &status) != 0) {
-        printf("HTTP error talking to %s\n", PT_HOST);
+        ui_alert("Pairing failed", "Could not reach the bank. Check Wi-Fi and TLS.");
         http_buffer_free(&resp);
         return -1;
     }
     if (status != 200 || !json_get_string(resp.data ? resp.data : "", "token", token, sizeof(token))) {
         json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
-        printf("Enroll failed (%ld): %s\n", status, err[0] ? err : "no token");
+        ui_alert("Pairing failed", err[0] ? err : "Server did not return a token.");
         http_buffer_free(&resp);
         return -1;
     }
     apply_token(token);
-    printf("Paired. Token saved.\n");
     http_buffer_free(&resp);
     return 0;
 }
@@ -473,25 +447,19 @@ static int pair_with_code_file(void)
     snprintf(body, sizeof(body), "{\"code\":\"%s\",\"name\":\"3DS\",\"platform\":\"3ds\"}", code);
     url_join(url, sizeof(url), "/api/auth/devices/pair");
     if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0) {
-        printf("HTTP error\n");
+        ui_alert("Pairing failed", "Could not reach the bank.");
         http_buffer_free(&resp);
         return -1;
     }
     if (status != 200 || !json_get_string(resp.data ? resp.data : "", "token", token, sizeof(token))) {
         json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
-        printf("Pair failed (%ld): %s\n", status, err);
+        ui_alert("Pairing failed", err[0] ? err : "Server did not return a token.");
         http_buffer_free(&resp);
         return -1;
     }
     apply_token(token);
-    printf("Paired from pair.txt. Token saved.\n");
     http_buffer_free(&resp);
     return 0;
-}
-
-static void restore_consoles(void)
-{
-    init_video();
 }
 
 static int prompt_text(const char *hint, char *out, size_t n, int password, int max_len)
@@ -506,48 +474,20 @@ static int prompt_text(const char *hint, char *out, size_t n, int password, int 
     if (password)
         swkbdSetPasswordMode(&swkbd, SWKBD_PASSWORD_HIDE);
     button = swkbdInputText(&swkbd, out, n);
-    restore_consoles();
+    ui_after_swkbd();
     trim_inplace(out);
     return (button == SWKBD_BUTTON_CONFIRM && out[0]) ? 0 : -1;
-}
-
-static int pick_items(const char *title, const char **items, int count)
-{
-    int sel = 0, i, drawn = -1;
-    while (aptMainLoop()) {
-        hidScanInput();
-        u32 k = hidKeysDown();
-        if (sel != drawn) {
-            consoleSelect(&bottom);
-            consoleClear();
-            printf("%s\n\n", title);
-            for (i = 0; i < count; i++)
-                printf("%c %s\n", i == sel ? '>' : ' ', items[i]);
-            drawn = sel;
-        }
-        if (k & KEY_DUP)
-            sel = (sel + count - 1) % count;
-        if (k & KEY_DDOWN)
-            sel = (sel + 1) % count;
-        if (k & KEY_B)
-            return -1;
-        if (k & KEY_A)
-            return sel;
-        present();
-    }
-    return -1;
 }
 
 static int auth_request(int is_register)
 {
     char user[40] = {0}, pass[72] = {0}, pass2[72] = {0};
-    char body[400], url[320], token[160], err[256], username[40];
+    char body[400], url[320], token[160], err[256], username[40], msg[320];
     HttpBuffer resp = {0};
     long status = 0;
 
-    consoleSelect(&bottom);
-    consoleClear();
-    printf("%s on %s\nSystem keyboard next.\n", is_register ? "Create account" : "Log in", PT_HOST);
+    refresh_chrome(is_register ? "Create account" : "Log in");
+    ui_busy(is_register ? "Create account" : "Log in", "System keyboard next.");
 
     if (prompt_text("Username (3-32: a-z, 0-9, _)", user, sizeof(user), 0, 32) != 0)
         return -1;
@@ -558,44 +498,40 @@ static int auth_request(int is_register)
         if (prompt_text("Confirm password", pass2, sizeof(pass2), 1, 64) != 0)
             return -1;
         if (strcmp(pass, pass2) != 0) {
-            consoleSelect(&bottom);
-            consoleClear();
-            printf("Passwords do not match.\n");
+            ui_alert("Passwords do not match", "Try again from the account menu.");
             return -1;
         }
         if (strlen(pass) < 8) {
-            consoleSelect(&bottom);
-            consoleClear();
-            printf("Password must be at least 8 characters.\n");
+            ui_alert("Password too short", "Use at least 8 characters.");
             return -1;
         }
     }
 
     if (!json_auth_body(body, sizeof(body), user, pass, "3DS", "3ds")) {
-        printf("Could not build request.\n");
+        ui_alert("Request failed", "Could not build the login body.");
         return -1;
     }
     url_join(url, sizeof(url), is_register ? "/api/auth/register" : "/api/auth/login");
-    consoleSelect(&bottom);
-    consoleClear();
-    printf("%s...\n", is_register ? "Creating account" : "Logging in");
+    ui_busy(is_register ? "Creating account" : "Logging in", "Talking to the bank...");
     if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0) {
-        printf("HTTP/TLS error talking to %s\n", PT_HOST);
-        printf("If the log says BADCERT_FUTURE, set the 3DS\ndate in System Settings to today.\n");
-        printf("See sdmc:/pockettransfer.log\n");
+        ui_alert("HTTP/TLS error",
+                 "Could not reach the bank. If the log says BADCERT_FUTURE, set the 3DS date to today. See sdmc:/pockettransfer.log");
         http_buffer_free(&resp);
         return -1;
     }
     if (status != 200 || !json_get_string(resp.data ? resp.data : "", "token", token, sizeof(token))) {
         json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
-        printf("Failed (%ld): %s\n", status, err[0] ? err : "no token");
+        snprintf(msg, sizeof(msg), "%s", err[0] ? err : "Server did not return a token.");
+        ui_alert("Sign-in failed", msg);
         http_buffer_free(&resp);
         return -1;
     }
     apply_token(token);
     if (!json_get_string(resp.data, "username", username, sizeof(username)))
         snprintf(username, sizeof(username), "%s", user);
-    printf("Signed in as %s.\nConsole paired. Token saved.\n", username);
+    snprintf(msg, sizeof(msg), "Signed in as %s.\nThis console is paired. Token saved.", username);
+    refresh_chrome("Signed in");
+    ui_alert("Welcome", msg);
     http_buffer_free(&resp);
     return 0;
 }
@@ -605,62 +541,78 @@ static int account_flow(void)
     const char *items[] = {"Create account", "Log in", "Pair from website", "Cancel"};
     int choice;
     while (aptMainLoop()) {
-        choice = pick_items("Pockettransfer account\nHost: " PT_HOST, items, 4);
+        refresh_chrome("Account");
+        choice = ui_pick("Account", items, 4);
         pt_log("account menu choice=%d", choice);
         if (choice < 0 || choice == 3)
             return g_cfg.token[0] ? 0 : -1;
-        consoleSelect(&bottom);
-        consoleClear();
         if (choice == 0 || choice == 1) {
-            if (auth_request(choice == 0) == 0) {
-                wait_a();
+            if (auth_request(choice == 0) == 0)
                 return 0;
-            }
-            wait_a();
             continue;
         }
-        printf("Pairing via website...\n");
+        ui_busy("Pairing", "Trying pair.txt, then device enroll...");
         if (pair_with_code_file() == 0 || enroll_device() == 0) {
-            wait_a();
+            refresh_chrome("Signed in");
+            ui_alert("Paired", "Token saved. This console can talk to the bank.");
             return 0;
         }
-        printf("\nGenerate a pairing code on the website, then retry.\n");
-        wait_a();
+        ui_alert("Pairing needed",
+                 "Generate a pairing code on the website, put it in sdmc:/3ds/pockettransfer/pair.txt, then retry.");
     }
     return g_cfg.token[0] ? 0 : -1;
 }
 
 static int select_game(int platform_3ds)
 {
-    int i, sel = 0, count = 0, drawn = -1;
+    int i, count = 0, choice;
     int idx[PT_GAME_COUNT];
+    const char *names[PT_GAME_COUNT];
     for (i = 0; i < PT_GAME_COUNT; i++) {
         if ((platform_3ds && strcmp(PT_GAMES[i].platform, "3ds") == 0) ||
-            (!platform_3ds && strcmp(PT_GAMES[i].platform, "switch") == 0))
-            idx[count++] = i;
-    }
-    while (aptMainLoop()) {
-        hidScanInput();
-        u32 k = hidKeysDown();
-        if (sel != drawn) {
-            consoleSelect(&bottom);
-            consoleClear();
-            printf("Select game (D-Pad, A confirm, B back)\n\n");
-            for (i = 0; i < count; i++)
-                printf("%c %s\n", i == sel ? '>' : ' ', PT_GAMES[idx[i]].name);
-            drawn = sel;
+            (!platform_3ds && strcmp(PT_GAMES[i].platform, "switch") == 0)) {
+            idx[count] = i;
+            names[count] = PT_GAMES[i].name;
+            count++;
         }
-        if (k & KEY_DUP)
-            sel = (sel + count - 1) % count;
-        if (k & KEY_DDOWN)
-            sel = (sel + 1) % count;
-        if (k & KEY_B)
-            return -1;
-        if (k & KEY_A)
-            return idx[sel];
-        present();
+    }
+    refresh_chrome("Select game");
+    choice = ui_pick("Select game", names, count);
+    if (choice < 0)
+        return -1;
+    return idx[choice];
+}
+
+static int session_commit(const char *session)
+{
+    char url[400];
+    HttpBuffer resp = {0};
+    long status = 0;
+    int i;
+    snprintf(url, sizeof(url), "%s/api/saves/%s/commit", g_cfg.host, session);
+    for (i = 0; i < 3; i++) {
+        if (pt_http_request("POST", url, "{}", "application/json", &resp, &status) == 0 &&
+            status == 200) {
+            http_buffer_free(&resp);
+            return 0;
+        }
+        pt_log("session commit try=%d status=%ld", i, status);
+        http_buffer_free(&resp);
+        resp.data = NULL;
+        resp.len = 0;
     }
     return -1;
+}
+
+static void session_abandon(const char *session)
+{
+    char url[400];
+    HttpBuffer resp = {0};
+    long status = 0;
+    snprintf(url, sizeof(url), "%s/api/saves/%s", g_cfg.host, session);
+    pt_http_request("DELETE", url, NULL, NULL, &resp, &status);
+    pt_log("session abandon status=%ld", status);
+    http_buffer_free(&resp);
 }
 
 static void transfer_flow(void)
@@ -670,140 +622,109 @@ static void transfer_flow(void)
     FS_MediaType media;
     uint8_t *save = NULL;
     u64 save_size = 0;
-    char url[400], session[80], err[256], save_path[32];
+    char url[400], session[80], err[256], save_path[32], msg[320];
     HttpBuffer resp = {0};
     long status = 0;
-    int box = 0, slot = 0, pokemon_id = 0;
-    char body[256];
     uint8_t *patched = NULL;
+    const char *where;
 
     if (gi < 0)
         return;
     if (select_save_media(gi, &media) != 0)
         return;
+    where = media == MEDIATYPE_GAME_CARD ? "game cart" : "SD";
     snprintf(save_path, sizeof(save_path), "/%s", PT_GAMES[gi].primary_save);
-    consoleSelect(&bottom);
-    consoleClear();
-    printf("Opening %s (%s)...\n", PT_GAMES[gi].name,
-           media == MEDIATYPE_GAME_CARD ? "game cart" : "SD");
+    snprintf(msg, sizeof(msg), "Opening %s from the %s.", PT_GAMES[gi].name, where);
+    ui_busy("Reading save", msg);
     if (R_FAILED(open_save_media(PT_GAMES[gi].title_id_u64, media, &arch))) {
-        printf("Could not mount save.\nInsert the cart or install the title,\nthen save once in-game.\n");
         pt_log("save mount fail %s media=%u", PT_GAMES[gi].id, (unsigned)media);
-        wait_a();
+        ui_alert("Could not mount save",
+                 "Insert the cart or install the title, then save once in-game.");
         return;
     }
     if (read_save_file(arch, save_path, &save, &save_size) != 0) {
-        printf("Failed to read %s\n", save_path);
+        ui_alert("Read failed", save_path);
         FSUSER_CloseArchive(arch);
-        wait_a();
         return;
     }
     backup_bytes(PT_GAMES[gi].id, save, save_size);
-    printf("Backed up %llu bytes. Uploading...\n", (unsigned long long)save_size);
+    snprintf(msg, sizeof(msg), "Local backup %llu bytes. Sending to the bank...",
+             (unsigned long long)save_size);
+    ui_busy("Uploading", msg);
     url_join(url, sizeof(url), "/api/saves/session");
-    if (pt_http_upload(url, "file", "main", save, (size_t)save_size, &resp, &status) != 0 || status != 200) {
+    if (pt_http_upload(url, "file", "main", save, (size_t)save_size, &resp, &status) != 0 ||
+        status != 200) {
         json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
-        printf("Upload failed (%ld) %s\n", status, err);
+        snprintf(msg, sizeof(msg), "%s", err[0] ? err : "Upload failed.");
+        ui_alert("Upload failed", msg);
         free(save);
         http_buffer_free(&resp);
         FSUSER_CloseArchive(arch);
-        wait_a();
         return;
     }
     if (!json_get_string(resp.data, "sessionId", session, sizeof(session))) {
-        printf("No sessionId in response\n");
+        ui_alert("Upload failed", "No sessionId in the response.");
         free(save);
         http_buffer_free(&resp);
         FSUSER_CloseArchive(arch);
-        wait_a();
         return;
     }
     http_buffer_free(&resp);
-    printf("Session %s\nDeposit: set box/slot then A\nWithdraw: write pokemonId to withdraw.txt, X\nStart: download patched save\nB: cancel\n", session);
-    printf("Default box 0 slot 0. Edit sdmc:/3ds/pockettransfer/slot.txt as box,slot[,pokemonId]\n");
-    wait_a();
-    {
-        FILE *sf = fopen(CONFIG_DIR "/slot.txt", "rb");
-        if (sf) {
-            fscanf(sf, "%d,%d,%d", &box, &slot, &pokemon_id);
-            fclose(sf);
-        }
-    }
-    hidScanInput();
-    /* deposit then user can withdraw; we offer deposit if pokemon_id==0 */
-    if (pokemon_id == 0) {
-        snprintf(body, sizeof(body),
-                 "{\"sessionId\":\"%s\",\"box\":%d,\"slot\":%d}", session, box, slot);
-        url_join(url, sizeof(url), "/api/bank/deposit");
-        if (pt_http_request("POST", url, body, "application/json", &resp, &status) == 0 && status == 200) {
-            printf("Deposited from box %d slot %d.\n", box, slot);
-        } else {
-            json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
-            printf("Deposit skipped/failed: %s\n", err);
-        }
-        http_buffer_free(&resp);
-    } else {
-        snprintf(body, sizeof(body),
-                 "{\"sessionId\":\"%s\",\"pokemonId\":%d,\"box\":%d,\"slot\":%d}",
-                 session, pokemon_id, box, slot);
-        url_join(url, sizeof(url), "/api/bank/withdraw");
-        if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0 || status != 200) {
-            json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
-            printf("Withdraw failed: %s\n", err);
-            http_buffer_free(&resp);
-            free(save);
-            FSUSER_CloseArchive(arch);
-            wait_a();
-            return;
-        }
-        http_buffer_free(&resp);
-        printf("Withdrew pokemon %d.\n", pokemon_id);
+    if (boxes_run(g_cfg.host, session) != 1) {
+        session_abandon(session);
+        free(save);
+        FSUSER_CloseArchive(arch);
+        return;
     }
 
     snprintf(url, sizeof(url), "%s/api/saves/%s/file", g_cfg.host, session);
+    ui_busy("Downloading", "Fetching the patched save...");
     if (pt_http_request("GET", url, NULL, NULL, &resp, &status) != 0 || status != 200 || !resp.data) {
-        printf("Failed to download patched save\n");
+        ui_alert("Download failed", "Could not fetch the patched save. Bank copies were kept.");
+        session_abandon(session);
         free(save);
         http_buffer_free(&resp);
         FSUSER_CloseArchive(arch);
-        wait_a();
         return;
     }
     patched = (uint8_t *)resp.data;
     if (lite_is_known_size(resp.len)) {
         char reason[64];
         if (!lite_validate_pkm(patched, resp.len, reason, sizeof(reason)))
-            printf("Note: response is not a raw PKM (%s); treating as full save.\n", reason);
+            pt_log("response is not a raw PKM (%s); treating as full save", reason);
     }
-    printf("Write patched save? A=yes B=no\n");
-    while (aptMainLoop()) {
-        hidScanInput();
-        if (hidKeysDown() & KEY_B) {
-            printf("Aborted write.\n");
-            break;
-        }
-        if (hidKeysDown() & KEY_A) {
-            if (write_save_file(arch, save_path, patched, resp.len,
-                                PT_GAMES[gi].title_id_u64) == 0)
-                printf("Save written to %s. Close the game if it was open.\n",
-                       media == MEDIATYPE_GAME_CARD ? "game cart" : "SD");
-            else
-                printf("Write failed.\n");
-            break;
-        }
-        gspWaitForVBlank();
+    ui_busy("Writing", "Committing save and clearing anti-restore...");
+    if (write_save_file(arch, save_path, patched, resp.len, PT_GAMES[gi].title_id_u64) != 0) {
+        ui_alert("Write failed",
+                 "The cart/SD was not updated. Bank copies were kept. Check sdmc:/pockettransfer.log");
+        session_abandon(session);
+        free(save);
+        http_buffer_free(&resp);
+        FSUSER_CloseArchive(arch);
+        return;
     }
+    if (session_commit(session) != 0)
+        ui_alert("Save written",
+                 "The game file was updated, but the bank could not be finalized. "
+                 "Pokemon are still held on the server so they cannot be lost.");
+    else if (media == MEDIATYPE_GAME_CARD)
+        ui_alert("Save written",
+                 "Reboot the 3DS before launching the game so the anti-restore lock reloads.");
+    else
+        ui_alert("Save written", "The SD save was updated. Close the game if it was open.");
     free(save);
     http_buffer_free(&resp);
     FSUSER_CloseArchive(arch);
-    wait_a();
 }
 
 int main(int argc, char **argv)
 {
-    int sel = 0, drawn = -1;
-    gfxInitDefault();
-    init_video();
+    const char *home[] = {"PC boxes", "Account", "Quit"};
+    int choice;
+
+    (void)argc;
+    (void)argv;
+    ui_init();
     fsInit();
     aptInit();
     g_have_am = R_SUCCEEDED(amInit());
@@ -818,14 +739,15 @@ int main(int argc, char **argv)
         if (ca)
             fclose(ca);
     }
+    refresh_chrome("Starting");
+    ui_busy("Starting", "Bringing up Wi-Fi...");
     if (init_net() != 0) {
-        consoleSelect(&bottom);
-        consoleClear();
-        printf("Wi-Fi/socket init failed.\nCheck 3DS internet settings.\nSee sdmc:/pockettransfer.log\n");
-        wait_a();
+        ui_alert("Wi-Fi failed",
+                 "Check 3DS internet settings. See sdmc:/pockettransfer.log");
     }
     ensure_dirs();
     load_config();
+    refresh_chrome(g_cfg.token[0] ? "Signed in" : "Not signed in");
     pt_log("config token=%s host=%s", g_cfg.token[0] ? "yes" : "no", g_cfg.host);
     pt_http_init("romfs:/cacert.pem");
     if (g_cfg.token[0])
@@ -834,32 +756,14 @@ int main(int argc, char **argv)
         goto shutdown;
 
     while (aptMainLoop()) {
-        hidScanInput();
-        u32 k = hidKeysDown();
-        if (sel != drawn) {
-            consoleSelect(&bottom);
-            consoleClear();
-            printf("Pockettransfer (3DS)\nHost: %s\nToken: %s\n\n", g_cfg.host,
-                   g_cfg.token[0] ? "(saved)" : "(none)");
-            printf("%c Deposit/withdraw\n%c Account\n%c Quit\n",
-                   sel == 0 ? '>' : ' ', sel == 1 ? '>' : ' ', sel == 2 ? '>' : ' ');
-            drawn = sel;
-        }
-        if (k & KEY_DUP)
-            sel = (sel + 2) % 3;
-        if (k & KEY_DDOWN)
-            sel = (sel + 1) % 3;
-        if (k & KEY_START || (k & KEY_A && sel == 2))
-            break;
-        if (k & KEY_A && sel == 0) {
+        refresh_chrome("Ready");
+        choice = ui_pick("Home", home, 3);
+        if (choice == 0)
             transfer_flow();
-            drawn = -1;
-        }
-        if (k & KEY_A && sel == 1) {
+        else if (choice == 1)
             account_flow();
-            drawn = -1;
-        }
-        present();
+        else if (choice == 2 || choice == -2)
+            break;
     }
 
 shutdown:
@@ -878,6 +782,6 @@ shutdown:
         amExit();
     fsExit();
     aptExit();
-    gfxExit();
+    ui_exit();
     return 0;
 }

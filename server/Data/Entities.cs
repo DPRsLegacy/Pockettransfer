@@ -63,4 +63,8 @@ public sealed class BankPokemon
     public required string LegalityReport { get; set; }
     public required string Sha256 { get; set; }
     public DateTimeOffset DepositedAt { get; set; }
+    /* False until the console writes the patched save. Pending deposits stay here so a skipped write cannot lose them. */
+    public bool Committed { get; set; } = true;
+    /* Session holding an in-progress withdraw (still in the bank) or a pending deposit. */
+    public Guid? HeldBySessionId { get; set; }
 }

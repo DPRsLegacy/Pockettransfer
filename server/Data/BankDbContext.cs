@@ -45,6 +45,8 @@ public sealed class BankDbContext(DbContextOptions<BankDbContext> options) : DbC
             e.Property(x => x.OriginalTrainer).HasMaxLength(24);
             e.Property(x => x.OriginVersion).HasMaxLength(16);
             e.Property(x => x.Sha256).HasMaxLength(64);
+            e.Property(x => x.Committed).HasDefaultValue(true);
+            e.HasIndex(x => x.HeldBySessionId);
         });
     }
 }

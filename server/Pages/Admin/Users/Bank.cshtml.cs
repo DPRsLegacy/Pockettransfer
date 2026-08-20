@@ -28,7 +28,7 @@ public class BankModel(AdminService admin, BankService bank, PkHexService pkhex)
         UserId = id;
         Username = detail.User.Username;
         await admin.EnsureBoxesAsync(id, ct);
-        var boxes = await bank.GetBoxesAsync(id, ct);
+        var boxes = await bank.GetBoxesAsync(id, ct, visibleOnly: false);
         Boxes = boxes.Select(b => new BoxView(
             b.Id,
             b.Index,

@@ -12,15 +12,32 @@ public sealed class BankService(
     ConversionRules conversion,
     IOptions<BankOptions> options)
 {
-    public async Task<List<BankBox>> GetBoxesAsync(int userId, CancellationToken ct) =>
-        await db.BankBoxes.AsNoTracking()
+    public async Task<List<BankBox>> GetBoxesAsync(
+        int userId,
+        CancellationToken ct,
+        Guid? sessionId = null,
+        bool visibleOnly = true)
+    {
+        var boxes = await db.BankBoxes.AsNoTracking()
             .Where(b => b.UserId == userId)
             .Include(b => b.Pokemon)
             .OrderBy(b => b.Index)
             .ToListAsync(ct);
+        if (!visibleOnly)
+            return boxes;
+
+        foreach (var box in boxes)
+        {
+            var visible = box.Pokemon.Where(p => VisibleInBank(p, sessionId)).ToList();
+            box.Pokemon = visible;
+        }
+
+        return boxes;
+    }
 
     public async Task<BankPokemon> DepositAsync(
         int userId,
+        Guid sessionId,
         SaveFile sav,
         int box,
         int slot,
@@ -65,6 +82,8 @@ public sealed class BankService(
             LegalityReport = legality.Report,
             Sha256 = PkHexService.Sha256Hex(data),
             DepositedAt = DateTimeOffset.UtcNow,
+            Committed = false,
+            HeldBySessionId = sessionId,
         };
         db.BankPokemon.Add(entity);
         sav.SetBoxSlotAtIndex(sav.BlankPKM, box, slot);
@@ -74,6 +93,7 @@ public sealed class BankService(
 
     public async Task<BankPokemon> WithdrawAsync(
         int userId,
+        Guid sessionId,
         SaveFile sav,
         int pokemonId,
         int box,
@@ -93,6 +113,11 @@ public sealed class BankService(
             .FirstOrDefaultAsync(p => p.Id == pokemonId && p.BankBox.UserId == userId, ct)
             ?? throw new InvalidOperationException("Pokémon not found in your bank.");
 
+        if (stored.HeldBySessionId is Guid held && held != sessionId)
+            throw new InvalidOperationException("That Pokémon is held by another save session.");
+        if (stored.Committed && stored.HeldBySessionId is not null)
+            throw new InvalidOperationException("That Pokémon is already being withdrawn.");
+
         var pk = pkhex.LoadPkm(stored.PkmData, (EntityContext)stored.EntityContext)
                  ?? throw new InvalidOperationException("Could not parse stored Pokémon data.");
 
@@ -108,9 +133,67 @@ public sealed class BankService(
             throw new InvalidOperationException("PKHeX rejected this Pokémon for the destination game.\n" + destLegality.Report);
 
         sav.SetBoxSlotAtIndex(converted, box, slot);
-        db.BankPokemon.Remove(stored);
+        if (!stored.Committed)
+        {
+            /* Undo a pending deposit: Pokémon was never committed to the bank. */
+            db.BankPokemon.Remove(stored);
+        }
+        else
+        {
+            stored.HeldBySessionId = sessionId;
+        }
+
         await db.SaveChangesAsync(ct);
         return stored;
+    }
+
+    public async Task CommitSessionAsync(int userId, Guid sessionId, CancellationToken ct)
+    {
+        var rows = await HeldForUserAsync(userId, sessionId, ct);
+        foreach (var row in rows)
+        {
+            if (row.Committed)
+                db.BankPokemon.Remove(row);
+            else
+            {
+                row.Committed = true;
+                row.HeldBySessionId = null;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task AbandonSessionAsync(int userId, Guid sessionId, CancellationToken ct)
+    {
+        var rows = await HeldForUserAsync(userId, sessionId, ct);
+        foreach (var row in rows)
+        {
+            if (row.Committed)
+                row.HeldBySessionId = null;
+            else
+                db.BankPokemon.Remove(row);
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task ReconcileOrphansAsync(IReadOnlySet<Guid> liveSessions, CancellationToken ct)
+    {
+        var held = await db.BankPokemon.Where(p => p.HeldBySessionId != null).ToListAsync(ct);
+        var dirty = false;
+        foreach (var row in held)
+        {
+            if (row.HeldBySessionId is not Guid sid || liveSessions.Contains(sid))
+                continue;
+            if (!row.Committed)
+                row.Committed = true;
+            row.HeldBySessionId = null;
+            dirty = true;
+        }
+
+        if (dirty)
+            await db.SaveChangesAsync(ct);
     }
 
     public SlotDto ToDto(BankPokemon p, PkHexService names, int boxIndex) => new(
@@ -131,6 +214,20 @@ public sealed class BankService(
         p.Sha256,
         p.DepositedAt,
         boxIndex);
+
+    private async Task<List<BankPokemon>> HeldForUserAsync(int userId, Guid sessionId, CancellationToken ct) =>
+        await db.BankPokemon.Include(p => p.BankBox)
+            .Where(p => p.HeldBySessionId == sessionId && p.BankBox.UserId == userId)
+            .ToListAsync(ct);
+
+    private static bool VisibleInBank(BankPokemon p, Guid? sessionId)
+    {
+        if (p.Committed && p.HeldBySessionId is null)
+            return true;
+        if (!p.Committed && p.HeldBySessionId is Guid held)
+            return sessionId is null || held == sessionId.Value;
+        return false;
+    }
 
     private async Task<BankBox> ResolveDestBoxAsync(int userId, int? destBoxIndex, int? destSlot, CancellationToken ct)
     {
