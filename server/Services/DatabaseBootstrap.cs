@@ -10,6 +10,7 @@ public static class DatabaseBootstrap
         await db.Database.EnsureCreatedAsync(ct);
         await PatchUsersTableAsync(db, ct);
         await BackfillUsernamesAsync(db, ct);
+        await EnsureUsernameIndexAsync(db, ct);
     }
 
     private static async Task PatchUsersTableAsync(BankDbContext db, CancellationToken ct)
@@ -20,6 +21,7 @@ public static class DatabaseBootstrap
                 """
                 ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "Username" character varying(32) NOT NULL DEFAULT '';
                 ALTER TABLE "Users" ALTER COLUMN "Email" DROP NOT NULL;
+                DROP INDEX IF EXISTS "IX_Users_Email";
                 """, ct);
             return;
         }
@@ -58,5 +60,16 @@ public static class DatabaseBootstrap
         if (baseName.Length >= 3 && baseName.Length <= 32)
             return baseName;
         return $"user{id}";
+    }
+
+    private static async Task EnsureUsernameIndexAsync(BankDbContext db, CancellationToken ct)
+    {
+        if (!db.Database.IsNpgsql())
+            return;
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_Username" ON "Users" ("Username");
+            """, ct);
     }
 }

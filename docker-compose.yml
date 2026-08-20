@@ -26,6 +26,8 @@ services:
         Host=postgres;Port=5432;Database=${POSTGRES_DB:-pockettransfer};Username=${POSTGRES_USER:-pockettransfer};Password=${POSTGRES_PASSWORD}
     ports:
       - "8080:8080"
+    volumes:
+      - pockettransfer-data:/app/Data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 15s
@@ -50,5 +52,6 @@ services:
 
 volumes:
   pockettransfer-pg:
+  pockettransfer-data:
   caddy-data:
   caddy-config:

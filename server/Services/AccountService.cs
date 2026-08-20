@@ -38,16 +38,33 @@ public sealed class AccountService(
         return user;
     }
 
-    public async Task<User?> AuthenticateAsync(string username, string password, CancellationToken ct)
+    public async Task<User?> AuthenticateAsync(string login, string password, CancellationToken ct)
     {
-        username = NormalizeUsername(username);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username, ct);
+        var user = await FindByLoginAsync(login, ct);
         if (user is null)
             return null;
         var result = hasher.VerifyHashedPassword(user, user.PasswordHash, password);
         return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded
             ? user
             : null;
+    }
+
+    public async Task<User?> FindByLoginAsync(string login, CancellationToken ct)
+    {
+        login = login.Trim();
+        if (login.Length == 0)
+            return null;
+
+        var username = NormalizeUsername(login);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username, ct);
+        if (user is not null)
+            return user;
+
+        if (!login.Contains('@'))
+            return null;
+
+        var email = login.ToLowerInvariant();
+        return await db.Users.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == email, ct);
     }
 
     public async Task EnsureBoxesAsync(int userId, CancellationToken ct)

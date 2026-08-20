@@ -3,28 +3,46 @@
 @{
     ViewData["Title"] = "Devices";
 }
-<h1>Console pairing</h1>
-<p>Create a one-time code, then enter it on the 3DS or Switch app (or <code>POST /api/auth/devices/pair</code>).</p>
-<form method="post">
-    <button class="btn btn-primary" type="submit">Generate pairing code</button>
-</form>
-@if (Model.PairingCode is not null)
-{
-    <p class="pairing-code">@Model.PairingCode</p>
-    <p>Valid for a few minutes. The console stores a device token in its config file after pairing.</p>
-}
-<h2>Paired devices</h2>
-<table class="table">
-    <thead><tr><th>Name</th><th>Platform</th><th>Created</th><th>Last used</th></tr></thead>
-    <tbody>
-    @foreach (var d in Model.Devices)
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h1>Console pairing</h1>
+        <p class="pt-panel-sub">Link your 3DS or Switch to deposit and withdraw Pokémon.</p>
+    </div>
+    <form method="post" class="mb-3">
+        <button class="btn btn-primary" type="submit">Generate pairing code</button>
+    </form>
+    @if (Model.PairingCode is not null)
     {
-        <tr>
-            <td>@d.Name</td>
-            <td>@d.Platform</td>
-            <td>@d.CreatedAt.UtcDateTime.ToString("u")</td>
-            <td>@(d.LastUsedAt?.UtcDateTime.ToString("u") ?? "—")</td>
-        </tr>
+        <p class="pairing-code">@Model.PairingCode</p>
+        <p class="text-muted">Valid for a few minutes. Enter this code on your console app, or send it via <code>POST /api/auth/devices/pair</code>.</p>
     }
-    </tbody>
-</table>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Paired devices</h2>
+    </div>
+    @if (Model.Devices.Count == 0)
+    {
+        <p class="text-muted mb-0">No devices paired yet.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="pt-table">
+                <thead><tr><th>Name</th><th>Platform</th><th>Created</th><th>Last used</th></tr></thead>
+                <tbody>
+                @foreach (var d in Model.Devices)
+                {
+                    <tr>
+                        <td>@d.Name</td>
+                        <td>@d.Platform</td>
+                        <td>@d.CreatedAt.UtcDateTime.ToString("u")</td>
+                        <td>@(d.LastUsedAt?.UtcDateTime.ToString("u") ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

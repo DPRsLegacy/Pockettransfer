@@ -5,11 +5,13 @@
     var p = Model.Pokemon!;
 }
 <nav class="breadcrumb-nav">
-    <a asp-page="/Bank/Index" asp-route-box="@p.BoxIndex">← Box @(p.BoxIndex + 1)</a>
+    <a asp-page="/Bank/Index" asp-route-box="@p.BoxIndex">← Back to Box @(p.BoxIndex + 1)</a>
 </nav>
 <article class="pokemon-detail @(p.IsLegal ? "legal" : "illegal")">
     <div class="pokemon-detail-head">
-        <img class="pokemon-detail-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/@(p.Species).png" alt="" />
+        <div class="pokemon-detail-sprite-wrap">
+            <img class="pokemon-detail-sprite" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/@(p.Species).png" alt="" />
+        </div>
         <div>
             <h1 class="@(p.IsShiny ? "shiny" : "")">@p.Nickname</h1>
             <p class="pokemon-detail-species">@p.SpeciesName @if (p.IsShiny) { <span class="badge shiny-badge">Shiny</span> }</p>

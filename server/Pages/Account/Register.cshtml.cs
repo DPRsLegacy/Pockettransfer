@@ -41,7 +41,16 @@ public class RegisterModel(AccountService accounts) : PageModel
         {
             var user = await accounts.RegisterAsync(Username, Password, ct);
             var identity = new ClaimsIdentity(AccountService.BuildClaims(user), CookieAuthenticationDefaults.AuthenticationScheme);
-            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+            var props = new AuthenticationProperties
+            {
+                IsPersistent = true,
+                AllowRefresh = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddDays(14),
+            };
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(identity),
+                props);
             return RedirectToPage("/Bank/Index");
         }
         catch (InvalidOperationException ex)

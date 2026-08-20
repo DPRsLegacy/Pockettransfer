@@ -4,24 +4,28 @@
     ViewData["Title"] = "Home";
 }
 <div class="hero">
+    <div class="hero-logo" aria-hidden="true"></div>
     <h1>Pockettransfer</h1>
-    <p class="lead">Your personal Pokémon Bank — view stored Pokémon in the browser, deposit and withdraw from 3DS or Switch.</p>
+    <p class="lead">Your personal Pokémon storage — browse your collection in the browser, deposit and withdraw from 3DS or Switch.</p>
     <div class="hero-actions">
         <a class="btn btn-primary btn-lg" asp-page="/Account/Login">Log in</a>
-        <a class="btn btn-outline-light btn-lg" asp-page="/Account/Register">Create account</a>
+        <a class="btn btn-outline-primary btn-lg" asp-page="/Account/Register">Create account</a>
     </div>
 </div>
 <section class="feature-grid">
     <div class="feature-card">
+        <div class="feature-icon">PC</div>
         <h3>Web bank</h3>
-        <p>Log in with username and password on PC or phone. Browse 32 boxes, search, and read PKHeX legality reports.</p>
+        <p>Browse 32 boxes, search your collection, and read PKHeX legality reports from any browser.</p>
     </div>
     <div class="feature-card">
+        <div class="feature-icon">SW</div>
         <h3>Console transfer</h3>
-        <p>Pair your 3DS or Switch, upload a save, deposit or withdraw — PKHeX handles conversion on the server.</p>
+        <p>Pair your 3DS or Switch, upload a save, and deposit or withdraw — PKHeX handles conversion.</p>
     </div>
     <div class="feature-card">
+        <div class="feature-icon">DB</div>
         <h3>Secure storage</h3>
-        <p>Pokémon are stored in PostgreSQL on your server. Saves only stay in memory during a session.</p>
+        <p>Pokémon live in PostgreSQL on your server. Saves only stay in memory during a session.</p>
     </div>
 </section>

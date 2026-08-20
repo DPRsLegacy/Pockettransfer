@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -14,10 +15,15 @@ builder.Services.Configure<BankOptions>(builder.Configuration.GetSection(BankOpt
 builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 10_000_000);
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
-    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
     o.KnownIPNetworks.Clear();
     o.KnownProxies.Clear();
 });
+
+var dataDir = Path.Combine(builder.Environment.ContentRootPath, "Data");
+Directory.CreateDirectory(dataDir);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDir, "keys")));
 
 var connection = builder.Configuration.GetConnectionString("Bank")
     ?? Environment.GetEnvironmentVariable("ConnectionStrings__Bank")
@@ -42,6 +48,7 @@ builder.Services.AddScoped<PkHexService>();
 builder.Services.AddScoped<ConversionRules>();
 builder.Services.AddScoped<BankService>();
 
+var useSecureCookies = !builder.Environment.IsDevelopment();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o =>
     {
@@ -50,7 +57,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         o.Cookie.Name = "pt_auth";
         o.ExpireTimeSpan = TimeSpan.FromDays(14);
         o.SlidingExpiration = true;
-        o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        o.Cookie.HttpOnly = true;
+        o.Cookie.SameSite = SameSiteMode.Lax;
+        o.Cookie.SecurePolicy = useSecureCookies ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
     })
     .AddScheme<DeviceTokenOptions, DeviceTokenHandler>(DeviceTokenHandler.SchemeName, _ => { });
 

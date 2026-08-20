@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Pockettransfer.Server.Data;
 using Pockettransfer.Server.Services;
 
 namespace Pockettransfer.Server.Pages.Account;
@@ -34,8 +35,22 @@ public class LoginModel(AccountService accounts) : PageModel
         }
 
         await accounts.EnsureBoxesAsync(user.Id, ct);
-        var identity = new ClaimsIdentity(AccountService.BuildClaims(user), CookieAuthenticationDefaults.AuthenticationScheme);
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+        await SignInUserAsync(user);
         return Redirect(string.IsNullOrEmpty(ReturnUrl) ? "/Bank" : ReturnUrl);
+    }
+
+    private async Task SignInUserAsync(User user)
+    {
+        var identity = new ClaimsIdentity(AccountService.BuildClaims(user), CookieAuthenticationDefaults.AuthenticationScheme);
+        var props = new AuthenticationProperties
+        {
+            IsPersistent = true,
+            AllowRefresh = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddDays(14),
+        };
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identity),
+            props);
     }
 }

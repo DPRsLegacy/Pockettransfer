@@ -15,7 +15,7 @@ See **[deploy/nginx-proxy-manager.md](../deploy/nginx-proxy-manager.md)**.
 
 ## TLS 1.2 for 3DS (`3ds-curl` / mbedtls)
 
-Keep **TLS 1.2** enabled on the proxy. In NPM **Advanced**:
+Keep **TLS 1.2** enabled on the proxy. In NPM, open the proxy host **Settings gear → Custom Nginx Configuration**:
 
 ```nginx
 ssl_protocols TLSv1.2 TLSv1.3;
