@@ -5,6 +5,9 @@ obj/
 *.db-shm
 *.db-wal
 server/Data/pockettransfer.db*
+server/Data/keys/
+Data/keys/
+**/Data/keys/
 .vs/
 .idea/
 *.nro

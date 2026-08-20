@@ -1,6 +1,5 @@
 ﻿@{
     var path = ViewContext.HttpContext.Request.Path.Value ?? "";
-    bool NavActive(string segment) => path.StartsWith(segment, StringComparison.OrdinalIgnoreCase);
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -26,13 +25,13 @@
                 <div class="navbar-collapse collapse" id="ptNav">
                     <ul class="navbar-nav flex-grow-1 ms-sm-3">
                         <li class="nav-item">
-                            <a class="nav-link @(NavActive("/Bank") ? "active" : "")" asp-page="/Bank/Index">My Bank</a>
+                            <a class="nav-link @(path.StartsWith("/Bank", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Bank/Index">My Bank</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link @(NavActive("/Saves") ? "active" : "")" asp-page="/Saves/Index">Saves</a>
+                            <a class="nav-link @(path.StartsWith("/Saves", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Saves/Index">Saves</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link @(NavActive("/Devices") ? "active" : "")" asp-page="/Devices/Index">Devices</a>
+                            <a class="nav-link @(path.StartsWith("/Devices", StringComparison.OrdinalIgnoreCase) ? "active" : "")" asp-page="/Devices/Index">Devices</a>
                         </li>
                     </ul>
                     <ul class="navbar-nav">

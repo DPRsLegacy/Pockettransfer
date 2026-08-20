@@ -5,7 +5,7 @@ using Pockettransfer.Server.Services;
 
 namespace Pockettransfer.Server.Pages.Bank;
 
-public class IndexModel(BankService bank, PkHexService pkhex) : PageModel
+public class IndexModel(BankService bank, PkHexService pkhex, AccountService accounts) : PageModel
 {
     public IReadOnlyList<BoxView> Boxes { get; private set; } = [];
     public int ActiveBox { get; private set; }
@@ -14,9 +14,13 @@ public class IndexModel(BankService bank, PkHexService pkhex) : PageModel
     public int TotalPokemon { get; private set; }
     public int FilledBoxes { get; private set; }
 
-    public async Task OnGetAsync(int box = 0, string? q = null, CancellationToken ct = default)
+    public async Task<IActionResult> OnGetAsync(int box = 0, string? q = null, CancellationToken ct = default)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (raw is null || !int.TryParse(raw, out var userId))
+            return RedirectToPage("/Account/Login");
+
+        await accounts.EnsureBoxesAsync(userId, ct);
         var boxes = await bank.GetBoxesAsync(userId, ct);
         Boxes = boxes.Select(b => new BoxView(
             b.Id,
@@ -44,6 +48,8 @@ public class IndexModel(BankService bank, PkHexService pkhex) : PageModel
                 .ThenBy(s => s.Slot)
                 .ToList();
         }
+
+        return Page();
     }
 
     public sealed record BoxView(int Id, int Index, string Name, IReadOnlyList<SlotDto> Slots);

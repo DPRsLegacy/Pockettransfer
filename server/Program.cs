@@ -20,7 +20,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.KnownProxies.Clear();
 });
 
-var dataDir = Path.Combine(builder.Environment.ContentRootPath, "Data");
+var dataDir = Environment.GetEnvironmentVariable("PT_DATA_DIR")
+    ?? Path.Combine(builder.Environment.ContentRootPath, "Data");
 Directory.CreateDirectory(dataDir);
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDir, "keys")));

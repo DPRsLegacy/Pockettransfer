@@ -3,4 +3,7 @@ obj/
 .git
 **/.git
 server/Data/*.db
+server/Data/keys/
+Data/keys/
+**/Data/keys/
 *.user

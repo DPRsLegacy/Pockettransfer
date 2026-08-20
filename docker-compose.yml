@@ -22,6 +22,7 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      PT_DETAILED_ERRORS: ${PT_DETAILED_ERRORS:-false}
       ConnectionStrings__Bank: >-
         Host=postgres;Port=5432;Database=${POSTGRES_DB:-pockettransfer};Username=${POSTGRES_USER:-pockettransfer};Password=${POSTGRES_PASSWORD}
     ports:

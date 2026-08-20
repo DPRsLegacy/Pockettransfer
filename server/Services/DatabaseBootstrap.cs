@@ -20,7 +20,17 @@ public static class DatabaseBootstrap
             await db.Database.ExecuteSqlRawAsync(
                 """
                 ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "Username" character varying(32) NOT NULL DEFAULT '';
-                ALTER TABLE "Users" ALTER COLUMN "Email" DROP NOT NULL;
+                DO $patch$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'Users'
+                          AND column_name = 'Email'
+                    ) THEN
+                        ALTER TABLE "Users" ALTER COLUMN "Email" DROP NOT NULL;
+                    END IF;
+                END $patch$;
                 DROP INDEX IF EXISTS "IX_Users_Email";
                 """, ct);
             return;
