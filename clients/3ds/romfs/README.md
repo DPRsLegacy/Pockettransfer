@@ -1,1 +1,1 @@
-Place `cacert.pem` (ISRG Root X1) in this folder before `make`. See ../../shared/tls.md
+`make` writes `cacert.pem` here from the live pockettransfer.net chain (Google Trust Services). See ../../shared/tls.md

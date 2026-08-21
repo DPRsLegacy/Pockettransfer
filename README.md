@@ -2,7 +2,7 @@
 
 A Self-hostable (I don't wish that upon you) Pokémon Bank / HOME-style storage for **modded 3DS and Switch**. PKHeX.Core on the server handles save writes and legality; banked Pokémon live in **PostgreSQL**.
 
-**My Site** [bank.saltbox.cc](https://bank.saltbox.cc)
+**My Site** [pockettransfer.net](https://pockettransfer.net)
 
 ## Server: Proxmox Docker LXC + Nginx Proxy Manager
 

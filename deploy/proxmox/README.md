@@ -39,7 +39,7 @@ Set at least:
 
 ```env
 POSTGRES_PASSWORD=a-long-random-secret
-BANK_DOMAIN=bank.saltbox.cc
+BANK_DOMAIN=pockettransfer.net
 ```
 
 Optional: `PT_ADMIN_USERNAMES=yourname` so that account is always an admin. If unset, the oldest user becomes admin.
@@ -61,7 +61,7 @@ curl -sf http://127.0.0.1:8080/health && echo OK
 ```
 
 - **Direct test:** `http://LXC_IP:8080`
-- **Public URL (recommended):** [Nginx Proxy Manager](../nginx-proxy-manager.md) → `https://bank.saltbox.cc`
+- **Public URL (recommended):** [Nginx Proxy Manager](../nginx-proxy-manager.md) → `https://pockettransfer.net`
 
 Do **not** use `--profile tls` if NPM handles HTTPS.
 
@@ -70,7 +70,7 @@ Do **not** use `--profile tls` if NPM handles HTTPS.
 ```text
 Proxmox host
  ├── Docker LXC → Pockettransfer (postgres + web :8080)
- └── NPM LXC/host → https://bank.saltbox.cc → proxy to :8080
+ └── NPM LXC/host → https://pockettransfer.net → proxy to :8080
 ```
 
 Optional: built-in Caddy (`--profile tls`) if you are **not** using NPM.
@@ -79,7 +79,7 @@ Pokémon bytes live in **PostgreSQL** inside the `postgres` container volume. Sa
 
 ## 6. Console clients
 
-Host is hardcoded to `https://bank.saltbox.cc`. First launch: create an account or log in on the console keyboard; the app stores the device token.
+Host is hardcoded to `https://pockettransfer.net`. First launch: create an account or log in on the console keyboard; the app stores the device token.
 
 See [../nginx-proxy-manager.md](../nginx-proxy-manager.md).
 
@@ -98,8 +98,8 @@ git pull
 | `docker: command not found` | Re-run the [Docker LXC script](https://community-scripts.org/scripts?q=docker&preview=docker) or install Docker inside the LXC. |
 | Build OOM during `docker compose build` | Raise LXC RAM to 4 GB, or build on another machine and push to a registry. |
 | Can't reach `:8080` from LAN | Proxmox firewall: allow TCP 8080 to the LXC; check `docker compose ps`. |
-| Let's Encrypt fails | DNS `bank.saltbox.cc` → NPM; ports 80/443 → NPM (not Pockettransfer LXC). |
-| 3DS SSL errors | NPM Advanced: `ssl_protocols TLSv1.2 TLSv1.3`; ISRG Root X1 in `cacert.pem`. |
+| Let's Encrypt fails | DNS `pockettransfer.net` → NPM; ports 80/443 → NPM (not Pockettransfer LXC). |
+| 3DS SSL errors | NPM Advanced: `ssl_protocols TLSv1.2 TLSv1.3`; rebuild with `tools/fetch_cacert.py` (GTS Root R4). |
 
 ## 9. Firewall (Proxmox / LXC)
 

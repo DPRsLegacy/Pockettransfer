@@ -196,7 +196,7 @@ static void draw_top(const char *title, const char *body)
     C2D_DrawRectSolid(90, 130, 0, 8, 8, COL_SQ);
     C2D_DrawRectSolid(50, 180, 0, 12, 12, COL_SQ);
 
-    draw_text_sh(16, 40, SCALE_SMALL, COL_MUTED, 0, g_host[0] ? g_host : "bank.saltbox.cc");
+    draw_text_sh(16, 40, SCALE_SMALL, COL_MUTED, 0, g_host[0] ? g_host : "pockettransfer.net");
     draw_text_sh(16, 58, SCALE_BODY, COL_TEXT, 0, g_account[0] ? g_account : "Not signed in");
     if (body && body[0])
         draw_wrap(16, 88, 368, SCALE_BODY, COL_TEXT, body);
@@ -309,7 +309,7 @@ void ui_init(void)
     g_buf = C2D_TextBufNew(16384);
     g_sheet = NULL;
     g_games = NULL;
-    copy_str(g_host, sizeof(g_host), "bank.saltbox.cc");
+    copy_str(g_host, sizeof(g_host), "pockettransfer.net");
     copy_str(g_account, sizeof(g_account), "Not signed in");
     copy_str(g_status, sizeof(g_status), "Starting");
 }

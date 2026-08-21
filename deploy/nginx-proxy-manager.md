@@ -1,4 +1,4 @@
-# Nginx Proxy Manager + bank.saltbox.cc
+# Nginx Proxy Manager + pockettransfer.net
 
 Use **Nginx Proxy Manager (NPM)** for HTTPS in front of Pockettransfer. Do **not** start the built-in Caddy container (`--profile tls`) when NPM handles TLS.
 
@@ -35,7 +35,7 @@ Create an **A record** (or CNAME):
 
 | Name | Value |
 |------|--------|
-| `bank.saltbox.cc` | Public IP that reaches your **NPM** host |
+| `pockettransfer.net` | Public IP that reaches your **NPM** host |
 
 For testing behind NAT, use your public IP and port-forward **80** and **443** to the NPM container/LXC.
 
@@ -45,7 +45,7 @@ On the Pockettransfer LXC:
 
 ```bash
 cp .env.example .env
-# set POSTGRES_PASSWORD; BANK_DOMAIN=bank.saltbox.cc is for your reference
+# set POSTGRES_PASSWORD; BANK_DOMAIN=pockettransfer.net is for your reference
 ./deploy/proxmox/up.sh
 curl -sf http://127.0.0.1:8080/health && echo OK
 ```
@@ -66,7 +66,7 @@ In Nginx Proxy Manager → **Hosts** → **Proxy Hosts** → **Add Proxy Host**.
 
 | Field | Value |
 |-------|--------|
-| Domain names | `bank.saltbox.cc` |
+| Domain names | `pockettransfer.net` |
 | Scheme | **`http`** ← must not be `https` |
 | Forward hostname / IP | Pockettransfer LXC IP (e.g. `192.168.1.210`) |
 | Forward port | `8080` |
@@ -101,7 +101,7 @@ proxy_send_timeout 120s;
 
 If NPM rejects `ssl_protocols` in that box (some versions only allow `location` snippets), leave the box empty. NPM’s default SSL already includes TLS 1.2; just do **not** turn on any “TLS 1.3 only” option.
 
-Save. Open `https://bank.saltbox.cc` and register an account.
+Save. Open `https://pockettransfer.net` and register an account.
 
 ## 4. Console config
 
@@ -109,7 +109,7 @@ Save. Open `https://bank.saltbox.cc` and register an account.
 
 ```json
 {
-  "host": "https://bank.saltbox.cc",
+  "host": "https://pockettransfer.net",
   "token": "pt_your_device_token_after_pairing"
 }
 ```
@@ -118,7 +118,7 @@ Save. Open `https://bank.saltbox.cc` and register an account.
 
 ```json
 {
-  "host": "https://bank.saltbox.cc",
+  "host": "https://pockettransfer.net",
   "token": "pt_your_device_token_after_pairing"
 }
 ```
@@ -127,13 +127,13 @@ Pair: launch the console app → **Create account** or **Log in** with the syste
 
 ## 5. 3DS CA bundle
 
-Before building the 3DS `.3dsx`, pin Let's Encrypt root:
+Before building the 3DS `.3dsx`, fetch the live Google Trust Services chain:
 
 ```bash
-curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem -o clients/3ds/romfs/cacert.pem
+python3 clients/3ds/tools/fetch_cacert.py -o clients/3ds/romfs/cacert.pem
 ```
 
-NPM's Let's Encrypt chain uses ISRG Root X1, which 3DS must trust via that file.
+`make` in `clients/3ds` does this automatically. pockettransfer.net is signed by GTS WE1, not Let's Encrypt.
 
 ## 6. Troubleshooting
 

@@ -60,8 +60,8 @@ all: cacert sprites $(BUILD)
 
 cia: cacert sprites $(BUILD) $(OUTPUT).cia
 
-romfs/cacert.pem:
-	@curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem -o $@
+romfs/cacert.pem: tools/fetch_cacert.py
+	@$(PYTHON) tools/fetch_cacert.py -o $@
 	@echo fetched ... romfs/cacert.pem
 
 cacert: romfs/cacert.pem

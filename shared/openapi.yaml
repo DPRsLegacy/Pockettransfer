@@ -6,7 +6,7 @@ info:
     Pokémon Bank/HOME-style storage. PKHeX.Core on the server is the legality
     authority. Consoles authenticate with a device token.
 servers:
-  - url: https://bank.saltbox.cc
+  - url: https://pockettransfer.net
 paths:
   /api/auth/register:
     post:

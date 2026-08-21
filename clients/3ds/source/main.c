@@ -19,7 +19,7 @@
 #define CONFIG_DIR "sdmc:/3ds/pockettransfer"
 #define CONFIG_PATH CONFIG_DIR "/config.json"
 #define BACKUP_DIR CONFIG_DIR "/backups"
-#define PT_HOST "https://bank.saltbox.cc"
+#define PT_HOST "https://pockettransfer.net"
 
 typedef struct {
     char host[256];
@@ -37,7 +37,7 @@ static int g_have_am;
 
 static void refresh_chrome(const char *status)
 {
-    ui_set_chrome("bank.saltbox.cc", g_cfg.token[0] ? "Signed in" : "Not signed in",
+    ui_set_chrome("pockettransfer.net", g_cfg.token[0] ? "Signed in" : "Not signed in",
                   status ? status : "Ready");
 }
 

@@ -14,7 +14,7 @@
 #define CONFIG_DIR "sdmc:/switch/pockettransfer"
 #define CONFIG_PATH CONFIG_DIR "/config.json"
 #define BACKUP_DIR CONFIG_DIR "/backups"
-#define PT_HOST "https://bank.saltbox.cc"
+#define PT_HOST "https://pockettransfer.net"
 
 typedef struct {
     char host[256];

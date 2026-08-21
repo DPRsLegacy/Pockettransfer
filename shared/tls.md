@@ -4,10 +4,10 @@ Consoles need a public **HTTPS** origin. This project supports:
 
 | Method | When to use |
 |--------|-------------|
-| **[Nginx Proxy Manager](nginx-proxy-manager.md)** | **Recommended** — e.g. `bank.saltbox.cc` on NPM, app on `:8080` |
+| **[Nginx Proxy Manager](nginx-proxy-manager.md)** | **Recommended** — e.g. `pockettransfer.net` on NPM, app on `:8080` |
 | **Built-in Caddy** | `docker compose --profile tls` if you are not using NPM |
 
-## Nginx Proxy Manager (bank.saltbox.cc)
+## Nginx Proxy Manager (pockettransfer.net)
 
 Pockettransfer listens on **HTTP port 8080** only. NPM requests Let's Encrypt and proxies to the Docker LXC.
 
@@ -27,11 +27,7 @@ Avoid TLS 1.3-only configs.
 
 ## 3DS CA bundle
 
-The 3DS client loads `romfs:/cacert.pem`. NPM/Let's Encrypt chains to **ISRG Root X1**:
-
-```bash
-curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem -o clients/3ds/romfs/cacert.pem
-```
+The 3DS client loads `romfs:/cacert.pem`. `make` runs `clients/3ds/tools/fetch_cacert.py`, which stores the live chain from **pockettransfer.net** plus **GTS Root R4** (Google Trust Services / WE1). Do not use ISRG Root X1 for that hostname.
 
 Switch `switch-curl` typically uses system CAs; you can still ship `cacert.pem` in romfs.
 
