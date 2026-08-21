@@ -135,6 +135,11 @@ public sealed class PkHexService
 
     public static byte FormatOf(SaveFile sav) => sav.PKMType.Name switch
     {
+        "PK1" => 1,
+        "PK2" => 2,
+        "PK3" => 3,
+        "PK4" => 4,
+        "PK5" => 5,
         "PK6" => 6,
         "PK7" => 7,
         "PK8" => 8,

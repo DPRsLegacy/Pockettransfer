@@ -3,8 +3,8 @@ using PKHeX.Core;
 namespace Pockettransfer.Server.Services;
 
 /// <summary>
-/// Home-like transfer gates: PKHeX conversion plus destination-game format.
-/// Backward transfers (e.g. SV species into USUM) are rejected when PKHeX has no route.
+/// Bank / Transporter / Home-like transfer gates: PKHeX conversion plus destination-game format.
+/// Backward transfers are rejected when PKHeX has no route.
 /// </summary>
 public sealed class ConversionRules(PkHexService pkhex)
 {

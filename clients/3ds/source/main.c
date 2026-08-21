@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "boxes.h"
+#include "ds_spi.h"
 #include "games.h"
 #include "http.h"
 #include "jsonutil.h"
@@ -201,7 +202,7 @@ static u64 cart_title_id(void)
     for (i = 0; i < nread; i++) {
         pt_log("cart tid[%lu]=%016llx", (unsigned long)i, (unsigned long long)tids[i]);
         for (j = 0; j < (u32)PT_GAME_COUNT; j++) {
-            if (PT_GAMES[j].title_id_u64 == tids[i])
+            if (pt_game_has_tid(&PT_GAMES[j], tids[i]))
                 return tids[i];
         }
     }
@@ -212,22 +213,130 @@ static const char *game_name_for_tid(u64 tid)
 {
     int i;
     for (i = 0; i < PT_GAME_COUNT; i++) {
-        if (PT_GAMES[i].title_id_u64 == tid)
+        if (pt_game_has_tid(&PT_GAMES[i], tid))
             return PT_GAMES[i].name;
     }
     return NULL;
 }
 
-static int select_save_media(int gi, FS_MediaType *out)
+static Result open_extdata(u64 title, FS_MediaType media, FS_Archive *arch)
 {
-    u64 want = PT_GAMES[gi].title_id_u64;
+    u32 path[3] = {media, (u32)title, (u32)(title >> 32)};
+    Result rc = FSUSER_OpenArchive(arch, ARCHIVE_EXTDATA,
+                                   (FS_Path){PATH_BINARY, sizeof(path), path});
+    pt_log("extdata open tid=%016llx media=%u rc=0x%08lx",
+           (unsigned long long)title, (unsigned)media, (unsigned long)rc);
+    if (R_SUCCEEDED(rc))
+        return rc;
+    path[1] = (u32)((title >> 8) & 0xFFFFF);
+    path[2] = 0;
+    rc = FSUSER_OpenArchive(arch, ARCHIVE_EXTDATA,
+                            (FS_Path){PATH_BINARY, sizeof(path), path});
+    pt_log("extdata open unique=%05lx media=%u rc=0x%08lx",
+           (unsigned long)path[1], (unsigned)media, (unsigned long)rc);
+    return rc;
+}
+
+static int probe_extdata(u64 title)
+{
+    FS_Archive arch;
+    FS_MediaType media[2] = {MEDIATYPE_SD, MEDIATYPE_NAND};
+    int i;
+    for (i = 0; i < 2; i++) {
+        if (R_SUCCEEDED(open_extdata(title, media[i], &arch))) {
+            FSUSER_CloseArchive(arch);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static Result open_game_archive(int gi, u64 title, FS_MediaType media, FS_Archive *arch)
+{
+    if (PT_GAMES[gi].archive == PT_ARCH_EXT)
+        return open_extdata(title, media, arch);
+    return open_save_media(title, media, arch);
+}
+
+static u64 first_matching_tid(int gi, u64 cart, const u64 *sd, u32 n)
+{
+    uint64_t tids[9];
+    int i, nt = pt_game_collect_tids(&PT_GAMES[gi], tids, 9);
+    if (pt_game_has_tid(&PT_GAMES[gi], cart))
+        return cart;
+    for (i = 0; i < (int)n; i++) {
+        if (pt_game_has_tid(&PT_GAMES[gi], sd[i]))
+            return sd[i];
+    }
+    for (i = 0; i < nt; i++) {
+        if (PT_GAMES[gi].archive == PT_ARCH_EXT) {
+            if (probe_extdata(tids[i]))
+                return tids[i];
+        } else if (probe_save(tids[i], MEDIATYPE_SD))
+            return tids[i];
+    }
+    return PT_GAMES[gi].title_id_u64;
+}
+
+static int select_save_media(int gi, FS_MediaType *out, u64 *tid_out)
+{
+    uint64_t own[9];
+    int nt = pt_game_collect_tids(&PT_GAMES[gi], own, 9);
     u64 cart = cart_title_id();
+    u64 want;
+    u32 sd_count = 0, sd_nread = 0;
+    u64 *sd_tids = NULL;
     const char *cname = game_name_for_tid(cart);
     const char *items[2];
     FS_MediaType map[2];
-    int n = 0, choice;
-    int sd_ok = probe_save(want, MEDIATYPE_SD);
-    int cart_ok = (cart == want);
+    int n = 0, choice, i, sd_ok = 0, cart_ok = 0;
+
+    if (g_have_am && R_SUCCEEDED(AM_GetTitleCount(MEDIATYPE_SD, &sd_count)) && sd_count > 0) {
+        if (sd_count > 512)
+            sd_count = 512;
+        sd_tids = calloc(sd_count, sizeof(u64));
+        if (sd_tids && R_FAILED(AM_GetTitleList(&sd_nread, MEDIATYPE_SD, sd_count, sd_tids)))
+            sd_nread = 0;
+    }
+    want = first_matching_tid(gi, cart, sd_tids, sd_nread);
+    free(sd_tids);
+
+    if (PT_GAMES[gi].archive == PT_ARCH_EXT) {
+        for (i = 0; i < nt; i++) {
+            FS_Archive arch;
+            if (R_SUCCEEDED(open_extdata(own[i], MEDIATYPE_SD, &arch))) {
+                FSUSER_CloseArchive(arch);
+                sd_ok = 1;
+                want = own[i];
+                break;
+            }
+        }
+        if (!sd_ok) {
+            for (i = 0; i < nt; i++) {
+                FS_Archive arch;
+                if (R_SUCCEEDED(open_extdata(own[i], MEDIATYPE_NAND, &arch))) {
+                    FSUSER_CloseArchive(arch);
+                    *out = MEDIATYPE_NAND;
+                    *tid_out = own[i];
+                    return 0;
+                }
+            }
+        }
+    } else {
+        sd_ok = want && probe_save(want, MEDIATYPE_SD);
+        if (!sd_ok) {
+            for (i = 0; i < nt; i++) {
+                if (probe_save(own[i], MEDIATYPE_SD)) {
+                    want = own[i];
+                    sd_ok = 1;
+                    break;
+                }
+            }
+        }
+    }
+    cart_ok = pt_game_has_tid(&PT_GAMES[gi], cart);
+    if (cart_ok)
+        want = cart;
 
     if (sd_ok) {
         items[n] = "SD card (installed title)";
@@ -240,7 +349,7 @@ static int select_save_media(int gi, FS_MediaType *out)
 
     if (n == 0) {
         char msg[256];
-        if (cart && cart != want)
+        if (cart && !pt_game_has_tid(&PT_GAMES[gi], cart))
             snprintf(msg, sizeof(msg),
                      "No save for %s.\nGame cart is %s.\nInstall the game or insert the matching cart, then save once in-game.",
                      PT_GAMES[gi].name, cname ? cname : "another title");
@@ -253,12 +362,14 @@ static int select_save_media(int gi, FS_MediaType *out)
     }
     if (n == 1) {
         *out = map[0];
+        *tid_out = (*out == MEDIATYPE_GAME_CARD && cart) ? cart : want;
         return 0;
     }
     choice = ui_pick("Load save from", items, n);
     if (choice < 0)
         return -1;
     *out = map[choice];
+    *tid_out = (*out == MEDIATYPE_GAME_CARD && cart) ? cart : want;
     return 0;
 }
 
@@ -347,7 +458,7 @@ static Result delete_secure_value(u64 title)
 }
 
 static int write_save_file(FS_Archive arch, const char *name, const uint8_t *data, u64 size,
-                           u64 title)
+                           u64 title, int clear_secure)
 {
     Handle h;
     u32 got = 0;
@@ -375,11 +486,13 @@ static int write_save_file(FS_Archive arch, const char *name, const uint8_t *dat
     rc = FSUSER_ControlArchive(arch, ARCHIVE_ACTION_COMMIT_SAVE_DATA, NULL, 0, NULL, 0);
     pt_log("save commit 0x%08lx", (unsigned long)rc);
     FSFILE_Close(h);
-    if (R_FAILED(rc))
+    if (R_FAILED(rc) && clear_secure)
         return -1;
-    rc = delete_secure_value(title);
-    if (R_FAILED(rc))
-        pt_log("anti-restore clear failed 0x%08lx", (unsigned long)rc);
+    if (clear_secure) {
+        rc = delete_secure_value(title);
+        if (R_FAILED(rc))
+            pt_log("anti-restore clear failed 0x%08lx", (unsigned long)rc);
+    }
     return 0;
 }
 
@@ -563,21 +676,88 @@ static int account_flow(void)
     return g_cfg.token[0] ? 0 : -1;
 }
 
+static const char *short_game_name(const char *name)
+{
+    static const char prefix[] = "Pokémon ";
+    size_t n = strlen(prefix);
+    if (name && strncmp(name, prefix, n) == 0)
+        return name + n;
+    return name;
+}
+
+static int sd_has_title(u64 tid, const u64 *tids, u32 n)
+{
+    u32 i;
+    for (i = 0; i < n; i++) {
+        if (tids[i] == tid)
+            return 1;
+    }
+    return 0;
+}
+
+static int game_detected(int gi, u64 cart, const u64 *sd_tids, u32 sd_n, int twl_gi)
+{
+    uint64_t tids[9];
+    int i, nt;
+    if (strcmp(PT_GAMES[gi].platform, "3ds") != 0)
+        return 0;
+    if (PT_GAMES[gi].archive == PT_ARCH_DS)
+        return twl_gi == gi;
+    if (pt_game_has_tid(&PT_GAMES[gi], cart))
+        return 1;
+    nt = pt_game_collect_tids(&PT_GAMES[gi], tids, 9);
+    for (i = 0; i < nt; i++) {
+        if (sd_has_title(tids[i], sd_tids, sd_n))
+            return 1;
+        if (PT_GAMES[gi].archive == PT_ARCH_EXT) {
+            if (probe_extdata(tids[i]))
+                return 1;
+        } else if (probe_save(tids[i], MEDIATYPE_SD))
+            return 1;
+    }
+    return 0;
+}
+
 static int select_game(int platform_3ds)
 {
     int i, count = 0, choice;
     int idx[PT_GAME_COUNT];
+    int icons[PT_GAME_COUNT];
     const char *names[PT_GAME_COUNT];
+    u64 cart = 0;
+    u32 sd_count = 0, sd_nread = 0;
+    u64 *sd_tids = NULL;
+    int twl_gi;
+
+    (void)platform_3ds;
+    cart = cart_title_id();
+    twl_gi = ds_cart_game_index(NULL, 0);
+    if (g_have_am && R_SUCCEEDED(AM_GetTitleCount(MEDIATYPE_SD, &sd_count)) && sd_count > 0) {
+        if (sd_count > 512)
+            sd_count = 512;
+        sd_tids = calloc(sd_count, sizeof(u64));
+        if (sd_tids && R_FAILED(AM_GetTitleList(&sd_nread, MEDIATYPE_SD, sd_count, sd_tids)))
+            sd_nread = 0;
+    }
+
     for (i = 0; i < PT_GAME_COUNT; i++) {
-        if ((platform_3ds && strcmp(PT_GAMES[i].platform, "3ds") == 0) ||
-            (!platform_3ds && strcmp(PT_GAMES[i].platform, "switch") == 0)) {
-            idx[count] = i;
-            names[count] = PT_GAMES[i].name;
-            count++;
-        }
+        if (!game_detected(i, cart, sd_tids, sd_nread, twl_gi))
+            continue;
+        idx[count] = i;
+        names[count] = short_game_name(PT_GAMES[i].name);
+        icons[count] = PT_GAMES[i].icon;
+        count++;
+    }
+    free(sd_tids);
+
+    if (count == 0) {
+        ui_alert("No games found",
+                 "No supported Pokémon save was found.\n"
+                 "Install a 3DS/VC title, insert a DS cart, or save once in-game.");
+        return -1;
     }
     refresh_chrome("Select game");
-    choice = ui_pick("Select game", names, count);
+    choice = ui_pick_icons("Select game", names, icons, count);
     if (choice < 0)
         return -1;
     return idx[choice];
@@ -618,63 +798,78 @@ static void session_abandon(const char *session)
 static void transfer_flow(void)
 {
     int gi = select_game(1);
-    FS_Archive arch;
-    FS_MediaType media;
+    int have_arch = 0, is_ds = 0;
+    FS_Archive arch = 0;
+    FS_MediaType media = MEDIATYPE_SD;
+    u64 tid = 0;
     uint8_t *save = NULL;
     u64 save_size = 0;
-    char url[400], session[80], err[256], save_path[32], msg[320];
+    char url[400], session[80], err[256], save_path[40], msg[320];
     HttpBuffer resp = {0};
     long status = 0;
     uint8_t *patched = NULL;
     const char *where;
+    const char *upload_name;
 
     if (gi < 0)
         return;
-    if (select_save_media(gi, &media) != 0)
-        return;
-    where = media == MEDIATYPE_GAME_CARD ? "game cart" : "SD";
+    is_ds = PT_GAMES[gi].archive == PT_ARCH_DS;
+    upload_name = PT_GAMES[gi].primary_save;
     snprintf(save_path, sizeof(save_path), "/%s", PT_GAMES[gi].primary_save);
-    snprintf(msg, sizeof(msg), "Opening %s from the %s.", PT_GAMES[gi].name, where);
-    ui_busy("Reading save", msg);
-    if (R_FAILED(open_save_media(PT_GAMES[gi].title_id_u64, media, &arch))) {
-        pt_log("save mount fail %s media=%u", PT_GAMES[gi].id, (unsigned)media);
-        ui_alert("Could not mount save",
-                 "Insert the cart or install the title, then save once in-game.");
-        return;
+
+    if (is_ds) {
+        u32 ds_size = 0;
+        where = "DS cart";
+        snprintf(msg, sizeof(msg), "Reading %s from the DS cart save chip.", PT_GAMES[gi].name);
+        ui_busy("Reading save", msg);
+        if (ds_spi_read(PT_GAMES[gi].nds3, &save, &ds_size) != 0) {
+            ui_alert("Read failed", "Could not read the DS cart save. Check sdmc:/pockettransfer.log");
+            ds_spi_end();
+            return;
+        }
+        save_size = ds_size;
+        media = MEDIATYPE_GAME_CARD;
+    } else {
+        if (select_save_media(gi, &media, &tid) != 0)
+            return;
+        where = media == MEDIATYPE_GAME_CARD ? "game cart" : "SD";
+        snprintf(msg, sizeof(msg), "Opening %s from the %s.", PT_GAMES[gi].name, where);
+        ui_busy("Reading save", msg);
+        if (R_FAILED(open_game_archive(gi, tid, media, &arch))) {
+            pt_log("save mount fail %s media=%u", PT_GAMES[gi].id, (unsigned)media);
+            ui_alert("Could not mount save",
+                     "Insert the cart or install the title, then save once in-game.");
+            return;
+        }
+        have_arch = 1;
+        if (read_save_file(arch, save_path, &save, &save_size) != 0) {
+            ui_alert("Read failed", save_path);
+            goto done;
+        }
     }
-    if (read_save_file(arch, save_path, &save, &save_size) != 0) {
-        ui_alert("Read failed", save_path);
-        FSUSER_CloseArchive(arch);
-        return;
-    }
+
     backup_bytes(PT_GAMES[gi].id, save, save_size);
     snprintf(msg, sizeof(msg), "Local backup %llu bytes. Sending to the bank...",
              (unsigned long long)save_size);
     ui_busy("Uploading", msg);
     url_join(url, sizeof(url), "/api/saves/session");
-    if (pt_http_upload(url, "file", "main", save, (size_t)save_size, &resp, &status) != 0 ||
+    if (pt_http_upload(url, "file", upload_name, save, (size_t)save_size, &resp, &status) != 0 ||
         status != 200) {
         json_get_string(resp.data ? resp.data : "", "error", err, sizeof(err));
         snprintf(msg, sizeof(msg), "%s", err[0] ? err : "Upload failed.");
         ui_alert("Upload failed", msg);
-        free(save);
-        http_buffer_free(&resp);
-        FSUSER_CloseArchive(arch);
-        return;
+        goto done;
     }
     if (!json_get_string(resp.data, "sessionId", session, sizeof(session))) {
         ui_alert("Upload failed", "No sessionId in the response.");
-        free(save);
-        http_buffer_free(&resp);
-        FSUSER_CloseArchive(arch);
-        return;
+        goto done;
     }
     http_buffer_free(&resp);
+    resp.data = NULL;
+    resp.len = 0;
     if (boxes_run(g_cfg.host, session) != 1) {
         session_abandon(session);
-        free(save);
-        FSUSER_CloseArchive(arch);
-        return;
+        goto done;
     }
 
     snprintf(url, sizeof(url), "%s/api/saves/%s/file", g_cfg.host, session);
@@ -682,10 +877,7 @@ static void transfer_flow(void)
     if (pt_http_request("GET", url, NULL, NULL, &resp, &status) != 0 || status != 200 || !resp.data) {
         ui_alert("Download failed", "Could not fetch the patched save. Bank copies were kept.");
         session_abandon(session);
-        free(save);
-        http_buffer_free(&resp);
-        FSUSER_CloseArchive(arch);
-        return;
+        goto done;
     }
     patched = (uint8_t *)resp.data;
     if (lite_is_known_size(resp.len)) {
@@ -693,28 +885,42 @@ static void transfer_flow(void)
         if (!lite_validate_pkm(patched, resp.len, reason, sizeof(reason)))
             pt_log("response is not a raw PKM (%s); treating as full save", reason);
     }
-    ui_busy("Writing", "Committing save and clearing anti-restore...");
-    if (write_save_file(arch, save_path, patched, resp.len, PT_GAMES[gi].title_id_u64) != 0) {
+    ui_busy("Writing", is_ds ? "Writing the DS cart save chip..." : "Committing save...");
+    if (is_ds) {
+        if (ds_spi_write(patched, (u32)resp.len) != 0) {
+            ui_alert("Write failed",
+                     "The DS cart was not updated. Bank copies were kept. Check sdmc:/pockettransfer.log");
+            session_abandon(session);
+            goto done;
+        }
+    } else if (write_save_file(arch, save_path, patched, resp.len, tid,
+                               PT_GAMES[gi].archive == PT_ARCH_SAVE) != 0) {
         ui_alert("Write failed",
                  "The cart/SD was not updated. Bank copies were kept. Check sdmc:/pockettransfer.log");
         session_abandon(session);
-        free(save);
-        http_buffer_free(&resp);
-        FSUSER_CloseArchive(arch);
-        return;
+        goto done;
     }
     if (session_commit(session) != 0)
         ui_alert("Save written",
                  "The game file was updated, but the bank could not be finalized. "
                  "Pokemon are still held on the server so they cannot be lost.");
+    else if (is_ds)
+        ui_alert("Save written", "Reboot the 3DS before launching the DS game.");
     else if (media == MEDIATYPE_GAME_CARD)
         ui_alert("Save written",
                  "Reboot the 3DS before launching the game so the anti-restore lock reloads.");
+    else if (PT_GAMES[gi].archive == PT_ARCH_EXT)
+        ui_alert("Save written", "The Virtual Console save was updated. Close the game if it was open.");
     else
         ui_alert("Save written", "The SD save was updated. Close the game if it was open.");
+
+done:
     free(save);
     http_buffer_free(&resp);
-    FSUSER_CloseArchive(arch);
+    if (have_arch)
+        FSUSER_CloseArchive(arch);
+    if (is_ds)
+        ds_spi_end();
 }
 
 int main(int argc, char **argv)

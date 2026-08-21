@@ -58,6 +58,7 @@ void ui_busy(const char *title, const char *body);
 int ui_alert(const char *title, const char *body);
 int ui_confirm(const char *title, const char *body);
 int ui_pick(const char *title, const char **items, int count);
+int ui_pick_icons(const char *title, const char **items, const int *icons, int count);
 
 int ui_boxes_poll(UiBoxView *st);
 void ui_boxes_draw(const UiBoxView *st);

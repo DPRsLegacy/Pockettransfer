@@ -16,7 +16,9 @@ public class GameMatrixTests
 
         using var doc = System.Text.Json.JsonDocument.Parse(json);
         var games = doc.RootElement.GetProperty("games").EnumerateArray().ToList();
-        Assert.Equal(15, games.Count);
+        Assert.Equal(31, games.Count);
+        Assert.Contains("0004000000171000", json); // Red VC
+        Assert.Contains("DS-ADA", json); // Diamond
 
         var titles = games.Select(g => g.GetProperty("titleId").GetString()).ToList();
         Assert.Equal(titles.Count, titles.Distinct(StringComparer.OrdinalIgnoreCase).Count());
@@ -25,23 +27,36 @@ public class GameMatrixTests
         Assert.Contains("3ds", platforms);
         Assert.Contains("switch", platforms);
 
+        var archives = games.Select(g => g.GetProperty("archive").GetString()).ToHashSet();
+        Assert.Contains("extdata", archives);
+        Assert.Contains("twl", archives);
+
         foreach (var game in games)
         {
-            Assert.True(game.GetProperty("format").GetInt32() is >= 6 and <= 9);
+            Assert.True(game.GetProperty("format").GetInt32() is >= 1 and <= 9);
             Assert.NotEmpty(game.GetProperty("saveFiles").EnumerateArray().ToList());
         }
     }
 
     [Theory]
+    [InlineData(1, 7, true)]
+    [InlineData(2, 7, true)]
+    [InlineData(4, 6, true)]
+    [InlineData(5, 7, true)]
     [InlineData(7, 8, true)]
     [InlineData(7, 9, true)]
     [InlineData(8, 9, true)]
     [InlineData(9, 7, false)]
     [InlineData(9, 6, false)]
+    [InlineData(7, 4, false)]
     public void Convertible_FollowsHomeLikeDirection(int fromFormat, int toFormat, bool expected)
     {
         PKM pk = fromFormat switch
         {
+            1 => new PK1 { Species = 25 },
+            2 => new PK2 { Species = 25 },
+            4 => new PK4 { Species = 25 },
+            5 => new PK5 { Species = 25 },
             6 => new PK6 { Species = 25 },
             7 => new PK7 { Species = 25 },
             8 => new PK8 { Species = 25 },

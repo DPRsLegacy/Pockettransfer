@@ -8,7 +8,7 @@
 #define COL_BG C2D_Color32(148, 184, 104, 255)
 #define COL_BG2 C2D_Color32(126, 166, 86, 255)
 #define COL_BG_BOT C2D_Color32(140, 176, 96, 255)
-#define COL_BANNER C2D_Color32(248, 248, 248, 255)
+#define COL_BANNER C2D_Color32(255, 255, 255, 110)
 #define COL_GOLD C2D_Color32(232, 176, 48, 255)
 #define COL_GOLD_DK C2D_Color32(196, 140, 28, 255)
 #define COL_TEXT C2D_Color32(252, 252, 252, 255)
@@ -20,8 +20,8 @@
 #define COL_ARROW C2D_Color32(220, 36, 36, 255)
 #define COL_SHINY C2D_Color32(248, 208, 64, 255)
 #define COL_LOCK C2D_Color32(72, 64, 64, 160)
-#define COL_TAG C2D_Color32(120, 48, 40, 255)
-#define COL_PILL C2D_Color32(244, 248, 252, 255)
+#define COL_PILL C2D_Color32(255, 255, 255, 96)
+#define COL_PILL_SEL C2D_Color32(255, 255, 255, 168)
 #define COL_MALE C2D_Color32(80, 160, 232, 255)
 #define COL_FEMALE C2D_Color32(240, 128, 176, 255)
 #define COL_LINE C2D_Color32(255, 255, 255, 90)
@@ -50,6 +50,7 @@ static C3D_RenderTarget *g_top;
 static C3D_RenderTarget *g_bot;
 static C2D_TextBuf g_buf;
 static C2D_SpriteSheet g_sheet;
+static C2D_SpriteSheet g_games;
 static char g_host[64];
 static char g_account[40];
 static char g_status[96];
@@ -124,6 +125,19 @@ static void draw_centered(float cx, float y, float width, float scale, u32 color
                  color, width);
 }
 
+static void draw_label_in(float x, float y, float w, float h, float scale, u32 color, const char *s)
+{
+    C2D_Text t;
+    float tw = 0.f, th = 0.f;
+    if (!s || !s[0])
+        return;
+    C2D_TextParse(&t, g_buf, s);
+    C2D_TextOptimize(&t);
+    C2D_TextGetDimensions(&t, scale, scale, &tw, &th);
+    C2D_DrawText(&t, C2D_WithColor | C2D_AlignCenter, x + w * 0.5f, y + (h - th) * 0.5f, Z, scale,
+                 scale, color);
+}
+
 static float measure_text(const char *s, float scale)
 {
     C2D_Text t;
@@ -160,22 +174,20 @@ static void draw_round_rect(float x, float y, float w, float h, u32 color)
 
 static void draw_banner(float cx, float y, float w, float h, const char *title)
 {
-    draw_round_rect(cx - w * 0.5f, y, w, h, COL_BANNER);
-    draw_centered(cx, y + h * 0.5f - 8.f, w - 8.f, SCALE_BODY, C2D_Color32(48, 48, 48, 255), title);
+    C2D_DrawRectSolid(cx - w * 0.5f, y, 0, w, h, COL_BANNER);
+    draw_label_in(cx - w * 0.5f, y, w, h, SCALE_BODY, C2D_Color32(48, 48, 48, 255), title);
 }
 
 static void draw_lr_key(float x, float y, const char *lab)
 {
     C2D_DrawRectSolid(x, y, 0, 18, 16, COL_GOLD);
     C2D_DrawRectSolid(x + 1, y + 1, 0, 16, 14, COL_GOLD_DK);
-    draw_centered(x + 9.f, y + 1.f, 16.f, 0.36f, COL_TEXT, lab);
+    draw_label_in(x, y, 18, 16, 0.36f, COL_TEXT, lab);
 }
 
 static void draw_top(const char *title, const char *body)
 {
     draw_pksm_bg(400, 240);
-    C2D_DrawRectSolid(310, 4, 0, 86, 16, COL_TAG);
-    draw_text(392, 5, 0.32f, COL_TEXT, C2D_AlignRight, "pocket");
     draw_lr_key(96, 8, "L");
     draw_banner(200, 6, 160, 20, title && title[0] ? title : "Pockettransfer");
     draw_lr_key(286, 8, "R");
@@ -201,19 +213,52 @@ static void draw_bot_bg(void)
 
 static void draw_footer(const char *hint)
 {
-    draw_round_rect(20, 214, 280, 20, C2D_Color32(255, 255, 255, 40));
-    draw_centered(160, 217, 270, SCALE_SMALL, COL_TEXT, hint);
+    C2D_DrawRectSolid(20, 214, 0, 280, 20, C2D_Color32(255, 255, 255, 40));
+    draw_label_in(20, 214, 280, 20, SCALE_SMALL, COL_TEXT, hint);
+}
+
+static void draw_game_icon(int icon, float x, float y, float px)
+{
+    C2D_Image img;
+    float scale;
+    if (!g_games)
+        g_games = C2D_SpriteSheetLoad("romfs:/game_icons.t3x");
+    if (!g_games || icon < 0)
+        return;
+    if ((size_t)icon >= C2D_SpriteSheetCount(g_games))
+        return;
+    img = C2D_SpriteSheetGetImage(g_games, (size_t)icon);
+    if (!img.tex || !img.subtex || img.subtex->width < 1)
+        return;
+    scale = px / (float)img.subtex->width;
+    C2D_DrawImageAt(img, x, y, Z, NULL, scale, scale);
+}
+
+static void draw_button_icon(const UiRect *r, const char *label, int selected, int icon)
+{
+    float scale = (r->h < 40.f || r->w < 150.f) ? SCALE_BTN_SM : SCALE_BTN;
+    u32 fill = selected ? COL_PILL_SEL : COL_PILL;
+    float icon_px = r->h - 10.f;
+    float text_x = r->x;
+    float text_w = r->w;
+    C2D_DrawRectSolid(r->x, r->y, 0, r->w, r->h, fill);
+    if (selected)
+        C2D_DrawRectSolid(r->x, r->y, 0, 4, r->h, COL_GOLD);
+    if (icon >= 0) {
+        if (icon_px > 48.f)
+            icon_px = 48.f;
+        if (icon_px < 20.f)
+            icon_px = 20.f;
+        draw_game_icon(icon, r->x + 8.f, r->y + (r->h - icon_px) * 0.5f, icon_px);
+        text_x = r->x + 10.f + icon_px;
+        text_w = r->w - (12.f + icon_px);
+    }
+    draw_label_in(text_x, r->y, text_w, r->h, scale, COL_INK, label);
 }
 
 static void draw_button(const UiRect *r, const char *label, int selected)
 {
-    float scale = (r->h < 40.f || r->w < 150.f) ? SCALE_BTN_SM : SCALE_BTN;
-    u32 fill = selected ? C2D_Color32(255, 255, 255, 255) : COL_PILL;
-    draw_round_rect(r->x + 1, r->y + 2, r->w, r->h, COL_SHADOW);
-    draw_round_rect(r->x, r->y, r->w, r->h, fill);
-    if (selected)
-        C2D_DrawRectSolid(r->x + 4, r->y + 4, 0, 3, r->h - 8, COL_GOLD);
-    draw_centered(r->x + r->w * 0.5f, r->y + r->h * 0.5f - 8.f, r->w - 16.f, scale, COL_INK, label);
+    draw_button_icon(r, label, selected, -1);
 }
 
 static void layout_grid(int count, int i, UiRect *r)
@@ -230,8 +275,8 @@ static void layout_grid(int count, int i, UiRect *r)
     int row = i / cols;
     r->w = avail_w / (float)cols;
     r->h = avail_h / (float)rows;
-    if (r->h > 56.f)
-        r->h = 56.f;
+    if (r->h > 64.f)
+        r->h = 64.f;
     r->x = side + (float)col * (r->w + gap);
     r->y = top + (float)row * (r->h + gap);
 }
@@ -263,6 +308,7 @@ void ui_init(void)
     g_bot = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
     g_buf = C2D_TextBufNew(16384);
     g_sheet = NULL;
+    g_games = NULL;
     copy_str(g_host, sizeof(g_host), "bank.saltbox.cc");
     copy_str(g_account, sizeof(g_account), "Not signed in");
     copy_str(g_status, sizeof(g_status), "Starting");
@@ -270,6 +316,9 @@ void ui_init(void)
 
 void ui_exit(void)
 {
+    if (g_games)
+        C2D_SpriteSheetFree(g_games);
+    g_games = NULL;
     if (g_sheet)
         C2D_SpriteSheetFree(g_sheet);
     g_sheet = NULL;
@@ -378,6 +427,11 @@ int ui_confirm(const char *title, const char *body)
 
 int ui_pick(const char *title, const char **items, int count)
 {
+    return ui_pick_icons(title, items, NULL, count);
+}
+
+int ui_pick_icons(const char *title, const char **items, const int *icons, int count)
+{
     int sel = 0;
     int cols = (count <= 3) ? 1 : 2;
     if (count <= 0)
@@ -425,8 +479,9 @@ int ui_pick(const char *title, const char **items, int count)
             int i;
             for (i = 0; i < count; i++) {
                 UiRect r;
+                int icon = (icons && icons[i] >= 0) ? icons[i] : -1;
                 layout_grid(count, i, &r);
-                draw_button(&r, items[i], i == sel);
+                draw_button_icon(&r, items[i], i == sel, icon);
             }
         }
         draw_footer("A / tap select  ·  B back");
@@ -535,7 +590,7 @@ static void draw_type_pill(float x, float y, const char *name)
     if (w < 52.f)
         w = 52.f;
     draw_round_rect(x, y, w, 14, type_color(name));
-    draw_centered(x + w * 0.5f, y + 1.f, w, 0.32f, COL_TEXT, lab);
+    draw_label_in(x, y, w, 14, 0.32f, COL_TEXT, lab);
 }
 
 static void draw_dash(float x, float y, float w)
@@ -680,17 +735,15 @@ static void draw_viewer_sprite(const UiPoke *p)
 
 static void draw_side_btn(const UiRect *r, const char *label, int selected)
 {
-    u32 fill = selected ? C2D_Color32(255, 255, 255, 255) : COL_PILL;
-    draw_round_rect(r->x, r->y, r->w, r->h, fill);
-    C2D_DrawRectSolid(r->x + 3, r->y + 5, 0, 3, r->h - 10, COL_GOLD);
-    C2D_DrawTriangle(r->x + 12, r->y + r->h * 0.5f, COL_INK, r->x + 20, r->y + r->h * 0.5f - 5,
-                     COL_INK, r->x + 20, r->y + r->h * 0.5f + 5, COL_INK, 0);
-    draw_text(r->x + 26, r->y + r->h * 0.5f - 7.f, SCALE_BTN_SM, COL_INK, 0, label);
+    u32 fill = selected ? COL_PILL_SEL : COL_PILL;
+    C2D_DrawRectSolid(r->x, r->y, 0, r->w, r->h, fill);
+    C2D_DrawRectSolid(r->x, r->y, 0, 4, r->h, COL_GOLD);
+    draw_label_in(r->x + 4, r->y, r->w - 4, r->h, SCALE_BTN_SM, COL_INK, label);
 }
 
 static void draw_swap_btn(void)
 {
-    draw_round_rect(BTN_SWAP.x, BTN_SWAP.y, BTN_SWAP.w, BTN_SWAP.h, COL_GOLD);
+    C2D_DrawRectSolid(BTN_SWAP.x, BTN_SWAP.y, 0, BTN_SWAP.w, BTN_SWAP.h, COL_GOLD);
     C2D_DrawRectSolid(BTN_SWAP.x + 4, BTN_SWAP.y + 5, 0, 7, 5, COL_GOLD_DK);
     C2D_DrawRectSolid(BTN_SWAP.x + 15, BTN_SWAP.y + 12, 0, 7, 5, COL_GOLD_DK);
     C2D_DrawTriangle(BTN_SWAP.x + 13, BTN_SWAP.y + 7, COL_TEXT, BTN_SWAP.x + 18, BTN_SWAP.y + 4,
@@ -898,8 +951,6 @@ void ui_boxes_draw(const UiBoxView *st)
     C2D_TargetClear(g_top, COL_BG);
     C2D_SceneBegin(g_top);
     draw_pksm_bg(400, 240);
-    C2D_DrawRectSolid(314, 4, 0, 82, 16, COL_TAG);
-    draw_text(392, 5, 0.32f, COL_TEXT, C2D_AlignRight, "pocket");
     draw_lr_key(88, 8, "L");
     draw_banner(200, 6, 170, 20, top_title);
     draw_lr_key(296, 8, "R");

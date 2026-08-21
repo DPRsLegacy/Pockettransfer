@@ -64,12 +64,15 @@ romfs/cacert.pem:
 
 cacert: romfs/cacert.pem
 
-sprites: romfs/pkm_icons.t3x
+sprites: romfs/pkm_icons.t3x romfs/game_icons.t3x
 
 romfs/pkm_icons.t3x: tools/pack_sprites.py
 	@$(PYTHON) tools/pack_sprites.py
 
-$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem romfs/pkm_icons.t3x
+romfs/game_icons.t3x: tools/pack_game_icons.py
+	@$(PYTHON) tools/pack_game_icons.py
+
+$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem romfs/pkm_icons.t3x romfs/game_icons.t3x
 	@$(PYTHON) cia/fetch_tools.py
 	@$(PYTHON) cia/gen_assets.py $(BUILD)
 	@$(BANNERTOOL) makebanner -i $(BUILD)/banner.png -a $(BUILD)/banner.wav -o $(BUILD)/banner.bnr

@@ -160,6 +160,14 @@ static int load_save_box(const char *host, const char *session, int box, UiBoxVi
         st->save_boxes = 1;
     slots = json_find_array_n(resp.data, resp.len, "slots");
     fill_slots(slots, st->save);
+    {
+        int slot_count = UI_BOX_SLOTS, i;
+        json_get_int(resp.data, "slotCount", &slot_count);
+        if (slot_count < 1 || slot_count > UI_BOX_SLOTS)
+            slot_count = UI_BOX_SLOTS;
+        for (i = slot_count; i < UI_BOX_SLOTS; i++)
+            st->save[i].locked = 1;
+    }
     snprintf(st->save_label, sizeof(st->save_label), "Box %d/%d", st->save_box + 1, st->save_boxes);
     http_buffer_free(&resp);
     return 0;
