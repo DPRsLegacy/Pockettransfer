@@ -28,8 +28,27 @@ static void parse_slot(const char *s, size_t n, UiPoke *p)
     json_get_int_n(s, n, "slot", &p->slot);
     json_get_bool_n(s, n, "isShiny", &p->shiny);
     json_get_bool_n(s, n, "locked", &p->locked);
-    if (!json_get_string_n(s, n, "nickname", p->name, sizeof(p->name)))
-        json_get_string_n(s, n, "speciesName", p->name, sizeof(p->name));
+    json_get_int_n(s, n, "form", &p->form);
+    json_get_int_n(s, n, "gender", &p->gender);
+    json_get_int_n(s, n, "tid", &p->tid);
+    json_get_int_n(s, n, "ivHp", &p->iv[0]);
+    json_get_int_n(s, n, "ivAtk", &p->iv[1]);
+    json_get_int_n(s, n, "ivDef", &p->iv[2]);
+    json_get_int_n(s, n, "ivSpa", &p->iv[3]);
+    json_get_int_n(s, n, "ivSpd", &p->iv[4]);
+    json_get_int_n(s, n, "ivSpe", &p->iv[5]);
+    json_get_string_n(s, n, "speciesName", p->species_name, sizeof(p->species_name));
+    json_get_string_n(s, n, "originalTrainer", p->ot, sizeof(p->ot));
+    json_get_string_n(s, n, "nature", p->nature, sizeof(p->nature));
+    json_get_string_n(s, n, "type1", p->type1, sizeof(p->type1));
+    json_get_string_n(s, n, "type2", p->type2, sizeof(p->type2));
+    json_get_string_n(s, n, "metDate", p->met, sizeof(p->met));
+    if (!json_get_string_n(s, n, "nickname", p->name, sizeof(p->name))) {
+        if (p->species_name[0])
+            snprintf(p->name, sizeof(p->name), "%s", p->species_name);
+        else
+            json_get_string_n(s, n, "speciesName", p->name, sizeof(p->name));
+    }
     if (empty) {
         int slot = p->slot;
         memset(p, 0, sizeof(*p));
@@ -82,7 +101,10 @@ static int load_bank(const char *host, const char *session, BankBoxMem *bank, in
     const char *obj, *obj_end, *slots;
     int i;
 
-    snprintf(url, sizeof(url), "%s/api/bank/boxes?sessionId=%s", host, session);
+    if (session && session[0])
+        snprintf(url, sizeof(url), "%s/api/bank/boxes?sessionId=%s", host, session);
+    else
+        snprintf(url, sizeof(url), "%s/api/bank/boxes", host);
     ui_busy("Bank", "Loading boxes...");
     if (pt_http_request("GET", url, NULL, NULL, &resp, &status) != 0 || status != 200 ||
         !resp.data) {
@@ -281,4 +303,41 @@ int boxes_run(const char *host, const char *session_id)
     }
     free(bank);
     return st.dirty ? 1 : 0;
+}
+
+int boxes_browse(const char *host)
+{
+    BankBoxMem *bank;
+    UiBoxView st;
+    int bank_n = 0, act;
+
+    if (!host || !host[0])
+        return 0;
+    bank = calloc(MAX_BANK_BOXES, sizeof(*bank));
+    if (!bank) {
+        ui_alert("Out of memory", "Could not allocate bank boxes.");
+        return 0;
+    }
+    memset(&st, 0, sizeof(st));
+    st.browse = 1;
+    st.pane = 1;
+    st.bank_boxes = 1;
+    if (load_bank(host, NULL, bank, &bank_n) != 0) {
+        free(bank);
+        return 0;
+    }
+    apply_bank(&st, bank, bank_n);
+
+    while (aptMainLoop()) {
+        apply_bank(&st, bank, bank_n);
+        st.pane = 1;
+        ui_boxes_draw(&st);
+        act = ui_boxes_poll(&st);
+        if (act == UI_BOX_NONE)
+            continue;
+        if (act == UI_BOX_QUIT || act == UI_BOX_BACK)
+            break;
+    }
+    free(bank);
+    return 0;
 }

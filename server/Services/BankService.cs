@@ -196,24 +196,40 @@ public sealed class BankService(
             await db.SaveChangesAsync(ct);
     }
 
-    public SlotDto ToDto(BankPokemon p, PkHexService names, int boxIndex) => new(
-        p.Id,
-        p.BankBoxId,
-        p.Slot,
-        p.Species,
-        names.SpeciesName((ushort)p.Species),
-        p.Form,
-        p.Nickname,
-        p.OriginalTrainer,
-        p.OriginVersion,
-        p.IsShiny,
-        p.Level,
-        p.Format,
-        p.IsLegal,
-        p.LegalityReport,
-        p.Sha256,
-        p.DepositedAt,
-        boxIndex);
+    public SlotDto ToDto(BankPokemon p, PkHexService names, int boxIndex)
+    {
+        var sum = names.SummarizeStored(p.PkmData, p.EntityContext);
+        return new(
+            p.Id,
+            p.BankBoxId,
+            p.Slot,
+            p.Species,
+            names.SpeciesName((ushort)p.Species),
+            p.Form,
+            p.Nickname,
+            p.OriginalTrainer,
+            p.OriginVersion,
+            p.IsShiny,
+            p.Level,
+            p.Format,
+            p.IsLegal,
+            p.LegalityReport,
+            p.Sha256,
+            p.DepositedAt,
+            boxIndex,
+            sum.Gender,
+            sum.Tid,
+            sum.Nature,
+            sum.Type1,
+            sum.Type2,
+            sum.MetDate,
+            sum.IvHp,
+            sum.IvAtk,
+            sum.IvDef,
+            sum.IvSpa,
+            sum.IvSpd,
+            sum.IvSpe);
+    }
 
     private async Task<List<BankPokemon>> HeldForUserAsync(int userId, Guid sessionId, CancellationToken ct) =>
         await db.BankPokemon.Include(p => p.BankBox)
@@ -281,4 +297,16 @@ public sealed record SlotDto(
     string LegalityReport,
     string Sha256,
     DateTimeOffset DepositedAt,
-    int BoxIndex);
+    int BoxIndex,
+    int Gender = 2,
+    int Tid = 0,
+    string Nature = "",
+    string Type1 = "",
+    string Type2 = "",
+    string MetDate = "",
+    int IvHp = 0,
+    int IvAtk = 0,
+    int IvDef = 0,
+    int IvSpa = 0,
+    int IvSpd = 0,
+    int IvSpe = 0);

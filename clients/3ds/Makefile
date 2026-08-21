@@ -52,11 +52,11 @@ ifneq ($(ROMFS),)
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: $(BUILD) clean all cia cacert
+.PHONY: $(BUILD) clean all cia cacert sprites
 
-all: cacert $(BUILD)
+all: cacert sprites $(BUILD)
 
-cia: cacert $(BUILD) $(OUTPUT).cia
+cia: cacert sprites $(BUILD) $(OUTPUT).cia
 
 romfs/cacert.pem:
 	@curl -fsSL https://letsencrypt.org/certs/isrgrootx1.pem -o $@
@@ -64,7 +64,12 @@ romfs/cacert.pem:
 
 cacert: romfs/cacert.pem
 
-$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem
+sprites: romfs/pkm_icons.t3x
+
+romfs/pkm_icons.t3x: tools/pack_sprites.py
+	@$(PYTHON) tools/pack_sprites.py
+
+$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem romfs/pkm_icons.t3x
 	@$(PYTHON) cia/fetch_tools.py
 	@$(PYTHON) cia/gen_assets.py $(BUILD)
 	@$(BANNERTOOL) makebanner -i $(BUILD)/banner.png -a $(BUILD)/banner.wav -o $(BUILD)/banner.bnr

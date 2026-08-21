@@ -18,19 +18,30 @@ typedef struct {
     int shiny;
     int id;
     int species;
+    int form;
     int level;
     int slot;
+    int gender; /* 0 male, 1 female, 2 none */
+    int tid;
+    int iv[6];
     char name[20];
+    char species_name[16];
+    char ot[16];
+    char nature[12];
+    char type1[12];
+    char type2[12];
+    char met[12];
 } UiPoke;
 
 typedef struct {
     int mode; /* 0 deposit, 1 withdraw */
-    int pane; /* 0 save (bottom), 1 bank (top) */
+    int pane; /* 0 save (bottom), 1 bank (bottom) */
     int dirty;
     int edits;
     int save_box, save_boxes, save_cur;
     int bank_box, bank_boxes, bank_cur;
     int picked_id;
+    int browse; /* 1 = bank only, no save */
     char save_label[64];
     char bank_label[64];
     UiPoke save[UI_BOX_SLOTS];

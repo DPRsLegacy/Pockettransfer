@@ -126,6 +126,8 @@ Skip ISRG Root X1. Put the **CA that signed your NPM cert** into `clients/3ds/ro
 
 ## 6. Build
 
+First build downloads Gen 7 PC box icons (once) into `tools/sprite-cache/` and packs `romfs/pkm_icons.t3x`. Needs network that first time.
+
 ```bash
 cd clients/3ds
 source /etc/profile.d/devkit-env.sh

@@ -10,6 +10,23 @@ public sealed class LegalitySummary
     public IReadOnlyList<string> Issues { get; init; } = [];
 }
 
+public sealed record PokeSummary(
+    int Gender,
+    int Tid,
+    string Nature,
+    string Type1,
+    string Type2,
+    string MetDate,
+    int IvHp,
+    int IvAtk,
+    int IvDef,
+    int IvSpa,
+    int IvSpd,
+    int IvSpe)
+{
+    public static PokeSummary Empty { get; } = new(2, 0, "", "", "", "", 0, 0, 0, 0, 0, 0);
+}
+
 public sealed class PkHexService
 {
     public SaveFile? LoadSave(byte[] data, string fileName = "main")
@@ -143,5 +160,87 @@ public sealed class PkHexService
         }
 
         return species == 0 ? "(empty)" : $"#{species}";
+    }
+
+    public PokeSummary Summarize(PKM pk)
+    {
+        if (pk.Species == 0)
+            return PokeSummary.Empty;
+
+        var strings = GameInfo.GetStrings("en");
+        var type1 = "";
+        var type2 = "";
+        try
+        {
+            var pi = pk.PersonalInfo;
+            if (pi.Type1 < strings.Types.Count)
+                type1 = strings.Types[pi.Type1];
+            if (pi.Type2 != pi.Type1 && pi.Type2 < strings.Types.Count)
+                type2 = strings.Types[pi.Type2];
+        }
+        catch
+        {
+            // personal table missing for this format
+        }
+
+        var nature = "";
+        try
+        {
+            var n = (int)pk.Nature;
+            if ((uint)n < (uint)strings.Natures.Count)
+                nature = strings.Natures[n];
+        }
+        catch
+        {
+            // ignore
+        }
+
+        var met = "";
+        try
+        {
+            if (pk.MetDate is { } d && d.Month > 0 && d.Day > 0)
+                met = $"{d.Month}/{d.Day}/{d.Year % 100:D2}";
+        }
+        catch
+        {
+            // ignore
+        }
+
+        var tid = 0;
+        try
+        {
+            tid = (int)pk.DisplayTID;
+        }
+        catch
+        {
+            tid = pk.TID16;
+        }
+
+        return new PokeSummary(
+            pk.Gender,
+            tid,
+            nature,
+            type1,
+            type2,
+            met,
+            pk.IV_HP,
+            pk.IV_ATK,
+            pk.IV_DEF,
+            pk.IV_SPA,
+            pk.IV_SPD,
+            pk.IV_SPE);
+    }
+
+    public PokeSummary SummarizeStored(byte[] data, int entityContext)
+    {
+        try
+        {
+            var pk = LoadPkm(data, (EntityContext)entityContext) ?? LoadPkmBySize(data);
+            return pk is null ? PokeSummary.Empty : Summarize(pk);
+        }
+        catch
+        {
+            return PokeSummary.Empty;
+        }
     }
 }

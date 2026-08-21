@@ -170,6 +170,7 @@ public sealed class ApiController(
             }
 
             var legality = pkhex.Analyze(pk, sav);
+            var sum = pkhex.Summarize(pk);
             slots.Add(new
             {
                 slot = s,
@@ -183,6 +184,18 @@ public sealed class ApiController(
                 level = pk.CurrentLevel,
                 legal = legality.Valid,
                 locked = sav.IsBoxSlotLocked(box, s),
+                gender = sum.Gender,
+                tid = sum.Tid,
+                nature = sum.Nature,
+                type1 = sum.Type1,
+                type2 = sum.Type2,
+                metDate = sum.MetDate,
+                ivHp = sum.IvHp,
+                ivAtk = sum.IvAtk,
+                ivDef = sum.IvDef,
+                ivSpa = sum.IvSpa,
+                ivSpd = sum.IvSpd,
+                ivSpe = sum.IvSpe,
             });
         }
 

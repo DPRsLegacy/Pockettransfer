@@ -719,16 +719,16 @@ static void transfer_flow(void)
 
 int main(int argc, char **argv)
 {
-    const char *home[] = {"PC boxes", "Account", "Quit"};
+    const char *home[] = {"Bank", "PC boxes", "Account", "Quit"};
     int choice;
 
     (void)argc;
     (void)argv;
-    ui_init();
     fsInit();
     aptInit();
     g_have_am = R_SUCCEEDED(amInit());
     romfsInit();
+    ui_init();
     pt_log_init("3ds");
     pt_log("entry %s", envIsHomebrew() ? "3dsx" : "cia");
     pt_log("amInit %s", g_have_am ? "ok" : "fail");
@@ -757,12 +757,15 @@ int main(int argc, char **argv)
 
     while (aptMainLoop()) {
         refresh_chrome("Ready");
-        choice = ui_pick("Home", home, 3);
-        if (choice == 0)
+        choice = ui_pick("Home", home, 4);
+        if (choice == 0) {
+            refresh_chrome("Bank");
+            boxes_browse(g_cfg.host);
+        } else if (choice == 1)
             transfer_flow();
-        else if (choice == 1)
+        else if (choice == 2)
             account_flow();
-        else if (choice == 2 || choice == -2)
+        else if (choice == 3 || choice == -2)
             break;
     }
 
@@ -777,11 +780,11 @@ shutdown:
         free(g_soc);
         g_soc = NULL;
     }
+    ui_exit();
     romfsExit();
     if (g_have_am)
         amExit();
     fsExit();
     aptExit();
-    ui_exit();
     return 0;
 }
