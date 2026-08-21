@@ -255,7 +255,7 @@ static int account_flow(void)
     const char *items[] = {"Create account", "Log in", "Pair from website", "Cancel"};
     int choice;
     while (appletMainLoop()) {
-        choice = pick_items("Pockettransfer account\nHost: " PT_HOST, items, 4);
+        choice = pick_items("Pocket Transfer account\nHost: " PT_HOST, items, 4);
         if (choice < 0 || choice == 3)
             return g_cfg.token[0] ? 0 : -1;
         if (choice == 0 || choice == 1) {
@@ -516,7 +516,7 @@ int main(int argc, char **argv)
 
     while (appletMainLoop()) {
         consoleClear();
-        printf("Pockettransfer (Switch)\nHost: %s\nToken: %s\n\n", g_cfg.host,
+        printf("Pocket Transfer (Switch)\nHost: %s\nToken: %s\n\n", g_cfg.host,
                g_cfg.token[0] ? "(saved)" : "(none)");
         printf("%c Deposit/withdraw\n%c Account\n%c Quit\n",
                sel == 0 ? '>' : ' ', sel == 1 ? '>' : ' ', sel == 2 ? '>' : ' ');

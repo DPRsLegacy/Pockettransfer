@@ -12,16 +12,15 @@ DATA     :=
 INCLUDES := source ../shared
 ROMFS    := romfs
 
-APP_TITLE := Pockettransfer
+APP_TITLE := Pocket Transfer
 APP_DESCRIPTION := Pokémon bank client
-APP_AUTHOR := Pockettransfer
+APP_AUTHOR := Pocket Transfer
 APP_PRODUCT_CODE := CTR-P-PTFR
 APP_UNIQUE_ID := 0xA054E
 
 PYTHON  ?= python3
 MAKEROM ?= $(CURDIR)/cia/tools/makerom
 BANNERTOOL ?= $(CURDIR)/cia/tools/bannertool
-ICON    := $(CTRULIB)/default_icon.png
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -O2 -mword-relocations -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__
@@ -36,6 +35,9 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
 export TOPDIR := $(CURDIR)
+ICON := $(TOPDIR)/source/icon.png
+BANNER := $(TOPDIR)/source/banner.png
+export APP_ICON := $(ICON)
 export VPATH  := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
@@ -72,10 +74,10 @@ romfs/pkm_icons.t3x: tools/pack_sprites.py
 romfs/game_icons.t3x: tools/pack_game_icons.py
 	@$(PYTHON) tools/pack_game_icons.py
 
-$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem romfs/pkm_icons.t3x romfs/game_icons.t3x
+$(OUTPUT).cia: $(OUTPUT).elf $(OUTPUT).smdh $(ICON) $(BANNER) cia/app.rsf cia/fetch_tools.py cia/gen_assets.py romfs/cacert.pem romfs/pkm_icons.t3x romfs/game_icons.t3x
 	@$(PYTHON) cia/fetch_tools.py
 	@$(PYTHON) cia/gen_assets.py $(BUILD)
-	@$(BANNERTOOL) makebanner -i $(BUILD)/banner.png -a $(BUILD)/banner.wav -o $(BUILD)/banner.bnr
+	@$(BANNERTOOL) makebanner -i $(BANNER) -a $(BUILD)/banner.wav -o $(BUILD)/banner.bnr
 	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(ICON)" -f nosavebackups,visible -o $(BUILD)/icon.icn
 	@$(STRIP) $(OUTPUT).elf -o $(BUILD)/stripped.elf
 	@$(MAKEROM) -f cia -o $@ -elf $(BUILD)/stripped.elf -rsf cia/app.rsf \

@@ -11,8 +11,8 @@ SOURCES  := source ../shared
 INCLUDES := source ../shared
 ROMFS    := romfs
 
-APP_TITLE := Pockettransfer
-APP_AUTHOR := Pockettransfer
+APP_TITLE := Pocket Transfer
+APP_AUTHOR := Pocket Transfer
 APP_VERSION := 1.0.0
 
 ARCH     := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE

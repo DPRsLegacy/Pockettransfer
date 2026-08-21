@@ -188,9 +188,9 @@ static void draw_lr_key(float x, float y, const char *lab)
 static void draw_top(const char *title, const char *body)
 {
     draw_pksm_bg(400, 240);
-    draw_lr_key(96, 8, "L");
-    draw_banner(200, 6, 160, 20, title && title[0] ? title : "Pockettransfer");
-    draw_lr_key(286, 8, "R");
+    draw_lr_key(88, 8, "L");
+    draw_banner(200, 6, 176, 20, title && title[0] ? title : "Pocket Transfer");
+    draw_lr_key(294, 8, "R");
 
     C2D_DrawRectSolid(28, 70, 0, 10, 10, COL_SQ);
     C2D_DrawRectSolid(90, 130, 0, 8, 8, COL_SQ);
