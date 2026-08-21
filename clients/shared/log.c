@@ -1,5 +1,7 @@
 #include "log.h"
 
+#ifndef PT_NO_LOG
+
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -46,3 +48,5 @@ void pt_log_shutdown(void)
     fclose(g_log);
     g_log = NULL;
 }
+
+#endif

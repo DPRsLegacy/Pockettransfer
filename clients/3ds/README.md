@@ -126,4 +126,4 @@ TLS notes: [shared/tls.md](../../shared/tls.md).
 
 ## 9. Debug log
 
-The app appends to **`sdmc:/pockettransfer.log`** (SD card root). Pull the SD card or use FTPD and open that file after a failure. It records boot, HTTP/TLS errors, and save-mount results. Passwords are not written. If the file grows past 512 KB it is truncated on the next launch.
+SD logging is **off** in the 3DS Makefile (`-DPT_NO_LOG`). The app does not write `sdmc:/pockettransfer.log`. Remove that flag and rebuild if you need traces again.

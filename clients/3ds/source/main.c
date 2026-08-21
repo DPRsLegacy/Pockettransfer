@@ -420,27 +420,12 @@ static Result delete_secure_value_one(u32 slot, u32 packed, u8 *existed)
 static Result delete_secure_value(u64 title)
 {
     u32 low = (u32)title;
-    u32 unique = (u32)((title >> 8) & 0xFFFFF);
-    u8 variation = (u8)(title & 0xFF);
     u32 packed_pksm = low & 0xFFFFFF00u;
     u32 packed_full = low & 0xFFFFFFu;
     u32 slots[2] = { SECUREVALUE_SLOT_SD, 0 };
     u32 packings[2] = { packed_pksm, packed_full };
     Result last = 0;
     int s, p;
-    bool found = false;
-
-    {
-        bool exists = false;
-        u64 val = 0;
-        Result grc = FSUSER_GetSaveDataSecureValue(&exists, &val, SECUREVALUE_SLOT_SD, unique,
-                                                   variation);
-        pt_log("secure get sd rc=0x%08lx exists=%d val=%llu", (unsigned long)grc, exists ? 1 : 0,
-               (unsigned long long)val);
-        grc = FSUSER_GetSaveDataSecureValue(&exists, &val, 0, unique, variation);
-        pt_log("secure get slot0 rc=0x%08lx exists=%d val=%llu", (unsigned long)grc, exists ? 1 : 0,
-               (unsigned long long)val);
-    }
 
     for (s = 0; s < 2; s++) {
         for (p = 0; p < 2; p++) {
@@ -449,11 +434,9 @@ static Result delete_secure_value(u64 title)
             pt_log("secure delete slot=0x%lx pack=0x%08lx rc=0x%08lx existed=%u",
                    (unsigned long)slots[s], (unsigned long)packings[p], (unsigned long)last,
                    (unsigned)existed);
-            if (existed)
-                found = true;
         }
     }
-    pt_log("secure value found=%d tid=%016llx", found ? 1 : 0, (unsigned long long)title);
+    pt_log("secure value tid=%016llx", (unsigned long long)title);
     return last;
 }
 
@@ -628,7 +611,7 @@ static int auth_request(int is_register)
     ui_busy(is_register ? "Creating account" : "Logging in", "Talking to the bank...");
     if (pt_http_request("POST", url, body, "application/json", &resp, &status) != 0) {
         ui_alert("HTTP/TLS error",
-                 "Could not reach the bank. If the log says BADCERT_FUTURE, set the 3DS date to today. See sdmc:/pockettransfer.log");
+                 "Could not reach the bank. If TLS fails, set the 3DS date to today.");
         http_buffer_free(&resp);
         return -1;
     }
@@ -823,7 +806,7 @@ static void transfer_flow(void)
         snprintf(msg, sizeof(msg), "Reading %s from the DS cart save chip.", PT_GAMES[gi].name);
         ui_busy("Reading save", msg);
         if (ds_spi_read(PT_GAMES[gi].nds3, &save, &ds_size) != 0) {
-            ui_alert("Read failed", "Could not read the DS cart save. Check sdmc:/pockettransfer.log");
+            ui_alert("Read failed", "Could not read the DS cart save.");
             ds_spi_end();
             return;
         }
@@ -889,14 +872,14 @@ static void transfer_flow(void)
     if (is_ds) {
         if (ds_spi_write(patched, (u32)resp.len) != 0) {
             ui_alert("Write failed",
-                     "The DS cart was not updated. Bank copies were kept. Check sdmc:/pockettransfer.log");
+                     "The DS cart was not updated. Bank copies were kept.");
             session_abandon(session);
             goto done;
         }
     } else if (write_save_file(arch, save_path, patched, resp.len, tid,
                                PT_GAMES[gi].archive == PT_ARCH_SAVE) != 0) {
         ui_alert("Write failed",
-                 "The cart/SD was not updated. Bank copies were kept. Check sdmc:/pockettransfer.log");
+                 "The cart/SD was not updated. Bank copies were kept.");
         session_abandon(session);
         goto done;
     }
@@ -949,7 +932,7 @@ int main(int argc, char **argv)
     ui_busy("Starting", "Bringing up Wi-Fi...");
     if (init_net() != 0) {
         ui_alert("Wi-Fi failed",
-                 "Check 3DS internet settings. See sdmc:/pockettransfer.log");
+                 "Check 3DS internet settings.");
     }
     ensure_dirs();
     load_config();
