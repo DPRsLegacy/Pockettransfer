@@ -6,7 +6,7 @@
 <div class="pt-panel">
     <div class="pt-panel-header">
         <h1>Admin</h1>
-        <p class="pt-panel-sub">Users, banks, password resets, and upkeep.</p>
+        <p class="pt-panel-sub">Users, banks, password resets, database backups, and upkeep.</p>
     </div>
     @if (Model.Status is not null)
     {
@@ -42,6 +42,14 @@
             <span class="admin-stat-label">Live codes</span>
         </div>
     </div>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Database</h2>
+        <p class="pt-panel-sub">Download a copy, keep backups on the server, or restore from a file.</p>
+    </div>
+    <a class="btn btn-outline-primary" asp-page="/Admin/Database">Database backups</a>
 </div>
 
 <div class="pt-panel">

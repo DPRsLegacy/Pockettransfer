@@ -1005,6 +1005,14 @@ a.admin-stat:hover {
   color: #c0392b;
 }
 
+.admin-row-actions form {
+  display: inline;
+}
+
+.admin-row-actions code {
+  font-size: 0.82rem;
+}
+
 .btn-outline-danger {
   border-radius: var(--pt-radius-pill);
   font-weight: 700;

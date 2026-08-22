@@ -1,0 +1,88 @@
+@page
+@model Pockettransfer.Server.Pages.Admin.DatabaseModel
+@{
+    ViewData["Title"] = "Database";
+}
+<nav class="breadcrumb-nav">
+    <a asp-page="/Admin/Index">← Admin</a>
+</nav>
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h1>Database</h1>
+        <p class="pt-panel-sub">@Model.Engine · gzipped Pocket Transfer backup (.ptbak). Works on SQLite and PostgreSQL.</p>
+    </div>
+    @if (Model.Status is not null)
+    {
+        <div class="alert alert-success">@Model.Status</div>
+    }
+    @if (Model.Error is not null)
+    {
+        <div class="alert alert-danger">@Model.Error</div>
+    }
+    <div class="admin-form-actions">
+        <a class="btn btn-primary" asp-page-handler="Download">Download database</a>
+        <form method="post" asp-page-handler="Create" class="d-inline">
+            <button class="btn btn-outline-primary" type="submit">Save backup on server</button>
+        </form>
+    </div>
+</div>
+
+<div class="pt-panel">
+    <div class="pt-panel-header">
+        <h2>Server backups</h2>
+        <p class="pt-panel-sub">Stored under Data/backups. Restore replaces every user, box, and Pokémon.</p>
+    </div>
+    @if (Model.Backups.Count == 0)
+    {
+        <p class="text-muted mb-0">No backups yet.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="pt-table">
+                <thead><tr><th>File</th><th>Size</th><th>Saved</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var b in Model.Backups)
+                {
+                    <tr>
+                        <td><code>@b.Name</code></td>
+                        <td>@DatabaseBackupService.FormatSize(b.SizeBytes)</td>
+                        <td>@b.WrittenAt.UtcDateTime.ToString("u")</td>
+                        <td class="admin-row-actions">
+                            <a asp-page-handler="DownloadBackup" asp-route-name="@b.Name">Download</a>
+                            <form method="post" asp-page-handler="Restore" class="d-inline" onsubmit="return confirm('Replace the live database with this backup?');">
+                                <input type="hidden" name="name" value="@b.Name" />
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Restore</button>
+                            </form>
+                            <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('Delete this backup file?');">
+                                <input type="hidden" name="name" value="@b.Name" />
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="pt-panel danger-zone">
+    <div class="pt-panel-header">
+        <h2>Import</h2>
+        <p class="pt-panel-sub">Upload a .ptbak (or raw JSON) to replace the live database. A safety copy of the current data is saved first. Type @DatabaseBackupService.ConfirmPhrase to confirm.</p>
+    </div>
+    <form method="post" asp-page-handler="Import" enctype="multipart/form-data" class="pt-form admin-inline-form">
+        <label class="pt-label">
+            Backup file
+            <input type="file" name="file" accept=".ptbak,.json,application/gzip,application/json" class="form-control" required />
+        </label>
+        <label class="pt-label">
+            Type @DatabaseBackupService.ConfirmPhrase to confirm
+            <input asp-for="ImportConfirm" class="form-control" autocomplete="off" autocapitalize="none" spellcheck="false" required />
+        </label>
+        <div class="admin-form-actions">
+            <button class="btn btn-danger" type="submit">Import and replace database</button>
+        </div>
+    </form>
+</div>
